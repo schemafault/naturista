@@ -65,6 +65,13 @@ actor DatabaseService {
             try Entry.fetchCount(db)
         }
     }
+
+    func deleteEntry(id: String) throws {
+        guard let dbQueue else { throw DatabaseError.notInitialized }
+        _ = try dbQueue.write { db in
+            try Entry.deleteOne(db, key: id)
+        }
+    }
 }
 
 enum DatabaseError: Error {

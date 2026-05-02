@@ -21,7 +21,7 @@ struct LibraryView: View {
             loadEntries()
         }
         .sheet(item: $selectedEntry) { entry in
-            EntryDetailView(entry: entry)
+            EntryDetailView(entry: entry, onDelete: { _ in loadEntries() })
                 .frame(minWidth: 500, minHeight: 600)
         }
     }
@@ -55,6 +55,12 @@ struct LibraryView: View {
                         .onTapGesture {
                             selectedEntry = entry
                         }
+                        .contextMenu {
+                            Button("Open") { selectedEntry = entry }
+                            Button("Re-run Pipeline") { handleRetry(entry) }
+                            Divider()
+                            Button("Delete", role: .destructive) { handleDelete(entry) }
+                        }
                 }
             }
             .padding()
@@ -79,15 +85,27 @@ struct LibraryView: View {
         }
     }
 
-private func handleRetry(_ entry: Entry) {
+    private func handleRetry(_ entry: Entry) {
+        guard let entryId = UUID(uuidString: entry.id) else { return }
         Task {
             do {
-                try await PipelineService.shared.runFullPipeline(entryId: UUID(uuidString: entry.id)!)
-                loadEntries()
+                try await PipelineService.shared.runFullPipeline(entryId: entryId)
             } catch {
                 print("Retry failed: \(error)")
-                loadEntries()
             }
+            loadEntries()
+        }
+    }
+
+    private func handleDelete(_ entry: Entry) {
+        guard let entryId = UUID(uuidString: entry.id) else { return }
+        Task {
+            do {
+                try await PipelineService.shared.deleteEntry(entryId: entryId)
+            } catch {
+                print("Delete failed: \(error)")
+            }
+            loadEntries()
         }
     }
 

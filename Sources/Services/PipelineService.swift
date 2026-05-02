@@ -25,6 +25,26 @@ actor PipelineService {
 
     private init() {}
 
+    func deleteEntry(entryId: UUID) async throws {
+        let entry = try await DatabaseService.shared.fetchEntry(id: entryId.uuidString)
+
+        if let entry = entry {
+            let fm = FileManager.default
+            let candidates: [URL] = [
+                AppPaths.originals.appendingPathComponent(entry.originalImageFilename),
+                AppPaths.working.appendingPathComponent(entry.workingImageFilename),
+                entry.illustrationFilename.map { AppPaths.illustrations.appendingPathComponent($0) },
+                entry.plateFilename.map { AppPaths.plates.appendingPathComponent($0) },
+            ].compactMap { $0 }
+
+            for url in candidates where fm.fileExists(atPath: url.path) {
+                try? fm.removeItem(at: url)
+            }
+        }
+
+        try await DatabaseService.shared.deleteEntry(id: entryId.uuidString)
+    }
+
     func recomposePlate(entryId: UUID) async throws {
         guard var currentEntry = try await DatabaseService.shared.fetchEntry(id: entryId.uuidString) else {
             throw PipelineError.entryNotFound

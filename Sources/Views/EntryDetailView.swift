@@ -3,13 +3,18 @@ import AppKit
 
 struct EntryDetailView: View {
     @State var entry: Entry
+    var onDelete: ((Entry) -> Void)?
+    @Environment(\.dismiss) private var dismiss
     @State private var isSavingNotes = false
     @State private var isExporting = false
     @State private var isRetrying = false
     @State private var isRecomposing = false
+    @State private var isDeleting = false
+    @State private var showDeleteConfirm = false
     @State private var exportError: String?
     @State private var retryError: String?
     @State private var recomposeError: String?
+    @State private var deleteError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -265,9 +270,16 @@ struct EntryDetailView: View {
 
     private var actionButtonsSection: some View {
         VStack(spacing: 12) {
-            Button("Generate Plate", action: retryPipeline)
-                .buttonStyle(.borderedProminent)
-                .disabled(entry.identificationJson.isEmpty || isRetrying || isRecomposing)
+            Button(action: retryPipeline) {
+                HStack {
+                    if isRetrying {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text(entry.plateFilename == nil ? "Run Pipeline" : "Re-run Pipeline")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isRetrying || isRecomposing || isDeleting)
 
             Button(action: recomposePlate) {
                 HStack {
@@ -278,7 +290,7 @@ struct EntryDetailView: View {
                 }
             }
             .buttonStyle(.bordered)
-            .disabled(entry.illustrationFilename == nil || isRetrying || isRecomposing)
+            .disabled(entry.illustrationFilename == nil || isRetrying || isRecomposing || isDeleting)
 
             if let error = recomposeError {
                 Text(error)
@@ -295,8 +307,60 @@ struct EntryDetailView: View {
                     .font(.caption)
                     .foregroundColor(.red)
             }
+
+            Divider().padding(.vertical, 4)
+
+            Button(role: .destructive, action: { showDeleteConfirm = true }) {
+                HStack {
+                    if isDeleting {
+                        ProgressView().controlSize(.small)
+                    }
+                    Image(systemName: "trash")
+                    Text("Delete Entry")
+                }
+            }
+            .buttonStyle(.bordered)
+            .tint(.red)
+            .disabled(isDeleting || isRetrying || isRecomposing)
+            .confirmationDialog(
+                "Delete this entry?",
+                isPresented: $showDeleteConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive, action: deleteEntry)
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Removes the entry, original photo, working copy, illustration, and plate. This cannot be undone.")
+            }
+
+            if let error = deleteError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
         }
         .padding(.top, 8)
+    }
+
+    private func deleteEntry() {
+        guard let entryId = UUID(uuidString: entry.id) else { return }
+        isDeleting = true
+        deleteError = nil
+
+        Task {
+            do {
+                try await PipelineService.shared.deleteEntry(entryId: entryId)
+                await MainActor.run {
+                    onDelete?(entry)
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    deleteError = error.localizedDescription
+                    isDeleting = false
+                }
+            }
+        }
     }
 
     private func recomposePlate() {
