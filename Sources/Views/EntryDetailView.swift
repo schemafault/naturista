@@ -15,10 +15,12 @@ struct EntryDetailView: View {
     @State private var retryError: String?
     @State private var recomposeError: String?
     @State private var deleteError: String?
+    @State private var imageRefreshID = UUID()
 
     var body: some View {
         VStack(spacing: 0) {
             mainImage
+                .id(imageRefreshID)
                 .frame(maxHeight: 400)
                 .frame(maxWidth: .infinity)
                 .background(Color.gray.opacity(0.1))
@@ -374,6 +376,7 @@ struct EntryDetailView: View {
                 if let updated = try await DatabaseService.shared.fetchEntry(id: entry.id) {
                     await MainActor.run {
                         entry = updated
+                        imageRefreshID = UUID()
                         isRecomposing = false
                     }
                 } else {
@@ -462,6 +465,7 @@ struct EntryDetailView: View {
                 if let updatedEntry = try await DatabaseService.shared.fetchEntry(id: entry.id) {
                     await MainActor.run {
                         entry = updatedEntry
+                        imageRefreshID = UUID()
                     }
                 }
             } catch {
@@ -471,6 +475,7 @@ struct EntryDetailView: View {
                 if let updatedEntry = try await DatabaseService.shared.fetchEntry(id: entry.id) {
                     await MainActor.run {
                         entry = updatedEntry
+                        imageRefreshID = UUID()
                     }
                 }
             }
