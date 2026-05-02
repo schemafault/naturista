@@ -92,6 +92,9 @@ actor PipelineService {
             throw PipelineError.gemmaFailed("Entry has no valid identification: \(error.localizedDescription)")
         }
 
+        // Free Gemma's ~17GB before loading FLUX so we don't OOM on 48GB machines.
+        await GemmaActor.shared.shutdown()
+
         let illustrationFilename: String
         do {
             let illustrationPath = try await FluxActor.shared.generate(
@@ -167,6 +170,9 @@ actor PipelineService {
         guard let identification = identificationResult else {
             throw PipelineError.gemmaFailed("No identification result")
         }
+
+        // Free Gemma's ~17GB before loading FLUX so we don't OOM on 48GB machines.
+        await GemmaActor.shared.shutdown()
 
         let illustrationFilename: String
         do {
