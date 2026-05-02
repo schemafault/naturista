@@ -4,7 +4,6 @@ struct LibraryView: View {
     @State private var entries: [Entry] = []
     @State private var isLoading = false
     @State private var selectedEntry: Entry?
-    @State private var showDetail = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,11 +20,9 @@ struct LibraryView: View {
         .onAppear {
             loadEntries()
         }
-        .sheet(isPresented: $showDetail) {
-            if let entry = selectedEntry {
-                EntryDetailView(entry: entry)
-                    .frame(minWidth: 500, minHeight: 600)
-            }
+        .sheet(item: $selectedEntry) { entry in
+            EntryDetailView(entry: entry)
+                .frame(minWidth: 500, minHeight: 600)
         }
     }
 
@@ -57,7 +54,6 @@ struct LibraryView: View {
                     EntryRowView(entry: entry, onRetry: handleRetry)
                         .onTapGesture {
                             selectedEntry = entry
-                            showDetail = true
                         }
                 }
             }

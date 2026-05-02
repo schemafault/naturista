@@ -9,6 +9,8 @@ struct ContentView: View {
     @State private var identificationError: String?
     @State private var isImporting = false
     @State private var isIdentifying = false
+    @State private var isGeneratingPlate = false
+    @State private var plateError: String?
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -18,6 +20,8 @@ struct ContentView: View {
                 identificationError: $identificationError,
                 isImporting: $isImporting,
                 isIdentifying: $isIdentifying,
+                isGeneratingPlate: $isGeneratingPlate,
+                plateError: $plateError,
                 lastEntry: $lastEntry,
                 onGeneratePlate: handleGeneratePlate
             )
@@ -36,7 +40,32 @@ struct ContentView: View {
     }
 
     private func handleGeneratePlate() {
-        print("Generate Plate pressed")
+        guard let entry = lastEntry, let entryId = UUID(uuidString: entry.id) else { return }
+        isGeneratingPlate = true
+        plateError = nil
+
+        Task {
+            do {
+                try await PipelineService.shared.runIllustrationAndCompose(entryId: entryId)
+                if let updated = try await DatabaseService.shared.fetchEntry(id: entry.id) {
+                    await MainActor.run {
+                        lastEntry = updated
+                        isGeneratingPlate = false
+                        selectedTab = 1
+                    }
+                } else {
+                    await MainActor.run {
+                        isGeneratingPlate = false
+                        selectedTab = 1
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    plateError = error.localizedDescription
+                    isGeneratingPlate = false
+                }
+            }
+        }
     }
 }
 
@@ -46,6 +75,8 @@ struct ImportView: View {
     @Binding var identificationError: String?
     @Binding var isImporting: Bool
     @Binding var isIdentifying: Bool
+    @Binding var isGeneratingPlate: Bool
+    @Binding var plateError: String?
     @Binding var lastEntry: Entry?
     var onGeneratePlate: () -> Void
 
@@ -139,14 +170,30 @@ struct ImportView: View {
     }
 
     private var generatePlateSection: some View {
-        Button(action: onGeneratePlate) {
-            Label("Generate Plate", systemImage: "paintpalette")
+        VStack(spacing: 12) {
+            Button(action: onGeneratePlate) {
+                HStack {
+                    if isGeneratingPlate {
+                        ProgressView().controlSize(.small)
+                        Text("Generating plate…")
+                    } else {
+                        Label("Generate Plate", systemImage: "paintpalette")
+                    }
+                }
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isIdentifying || isGeneratingPlate || identificationResult == nil || identificationError != nil)
+
+            if let error = plateError {
+                Text(error)
+                    .font(.callout)
+                    .foregroundColor(.red)
+                    .multilineTextAlignment(.center)
+            }
         }
-        .buttonStyle(.borderedProminent)
-        .disabled(isIdentifying || identificationResult == nil || identificationError != nil)
     }
 
     private func importPhoto() {

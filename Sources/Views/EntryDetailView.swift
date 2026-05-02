@@ -6,8 +6,10 @@ struct EntryDetailView: View {
     @State private var isSavingNotes = false
     @State private var isExporting = false
     @State private var isRetrying = false
+    @State private var isRecomposing = false
     @State private var exportError: String?
     @State private var retryError: String?
+    @State private var recomposeError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -265,7 +267,24 @@ struct EntryDetailView: View {
         VStack(spacing: 12) {
             Button("Generate Plate", action: retryPipeline)
                 .buttonStyle(.borderedProminent)
-                .disabled(entry.identificationJson.isEmpty || isRetrying)
+                .disabled(entry.identificationJson.isEmpty || isRetrying || isRecomposing)
+
+            Button(action: recomposePlate) {
+                HStack {
+                    if isRecomposing {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text("Recompose Plate Only")
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(entry.illustrationFilename == nil || isRetrying || isRecomposing)
+
+            if let error = recomposeError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
 
             Button("Export PNG", action: exportPlate)
                 .buttonStyle(.bordered)
@@ -278,6 +297,31 @@ struct EntryDetailView: View {
             }
         }
         .padding(.top, 8)
+    }
+
+    private func recomposePlate() {
+        guard let entryId = UUID(uuidString: entry.id) else { return }
+        isRecomposing = true
+        recomposeError = nil
+
+        Task {
+            do {
+                try await PipelineService.shared.recomposePlate(entryId: entryId)
+                if let updated = try await DatabaseService.shared.fetchEntry(id: entry.id) {
+                    await MainActor.run {
+                        entry = updated
+                        isRecomposing = false
+                    }
+                } else {
+                    await MainActor.run { isRecomposing = false }
+                }
+            } catch {
+                await MainActor.run {
+                    recomposeError = error.localizedDescription
+                    isRecomposing = false
+                }
+            }
+        }
     }
 
     private func confidenceIcon(for confidence: String) -> String {

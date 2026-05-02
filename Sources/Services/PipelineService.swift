@@ -25,6 +25,90 @@ actor PipelineService {
 
     private init() {}
 
+    func recomposePlate(entryId: UUID) async throws {
+        guard var currentEntry = try await DatabaseService.shared.fetchEntry(id: entryId.uuidString) else {
+            throw PipelineError.entryNotFound
+        }
+
+        guard let illustrationFilename = currentEntry.illustrationFilename, !illustrationFilename.isEmpty else {
+            throw PipelineError.fluxFailed("Entry has no illustration to recompose from")
+        }
+
+        let identification: IdentificationResult
+        do {
+            identification = try JSONDecoder().decode(IdentificationResult.self, from: Data(currentEntry.identificationJson.utf8))
+        } catch {
+            throw PipelineError.gemmaFailed("Entry has no valid identification: \(error.localizedDescription)")
+        }
+
+        do {
+            let plateFilename = try await PlateCompositor.compose(
+                entryId: entryId,
+                commonName: identification.topCandidate.commonName,
+                scientificName: identification.topCandidate.scientificName,
+                family: identification.topCandidate.family,
+                notes: currentEntry.notes,
+                illustrationFilename: illustrationFilename
+            )
+            currentEntry.plateFilename = plateFilename
+            try await DatabaseService.shared.saveEntry(currentEntry)
+        } catch {
+            throw PipelineError.compositorFailed(error.localizedDescription)
+        }
+    }
+
+    func runIllustrationAndCompose(entryId: UUID) async throws {
+        guard var currentEntry = try await DatabaseService.shared.fetchEntry(id: entryId.uuidString) else {
+            throw PipelineError.entryNotFound
+        }
+
+        let workingPath = AppPaths.working.appendingPathComponent(currentEntry.workingImageFilename).path
+
+        let decoder = JSONDecoder()
+        let identification: IdentificationResult
+        do {
+            identification = try decoder.decode(IdentificationResult.self, from: Data(currentEntry.identificationJson.utf8))
+        } catch {
+            throw PipelineError.gemmaFailed("Entry has no valid identification: \(error.localizedDescription)")
+        }
+
+        let illustrationFilename: String
+        do {
+            let illustrationPath = try await FluxActor.shared.generate(
+                photoPath: workingPath,
+                identification: identification,
+                entryId: entryId
+            )
+            illustrationFilename = URL(fileURLWithPath: illustrationPath).lastPathComponent
+            currentEntry.illustrationFilename = illustrationFilename
+            try await DatabaseService.shared.saveEntry(currentEntry)
+        } catch {
+            currentEntry.userStatus = "failed"
+            currentEntry.notes = "FLUX generation failed: \(error.localizedDescription)"
+            try await DatabaseService.shared.saveEntry(currentEntry)
+            throw PipelineError.fluxFailed(error.localizedDescription)
+        }
+
+        do {
+            let plateFilename = try await PlateCompositor.compose(
+                entryId: entryId,
+                commonName: identification.topCandidate.commonName,
+                scientificName: identification.topCandidate.scientificName,
+                family: identification.topCandidate.family,
+                notes: currentEntry.notes,
+                illustrationFilename: illustrationFilename
+            )
+            currentEntry.plateFilename = plateFilename
+            currentEntry.userStatus = "unreviewed"
+            try await DatabaseService.shared.saveEntry(currentEntry)
+        } catch {
+            currentEntry.userStatus = "failed"
+            currentEntry.notes = "Plate composition failed: \(error.localizedDescription)"
+            try await DatabaseService.shared.saveEntry(currentEntry)
+            throw PipelineError.compositorFailed(error.localizedDescription)
+        }
+    }
+
     func runFullPipeline(entryId: UUID) async throws {
         var entry: Entry?
         do {

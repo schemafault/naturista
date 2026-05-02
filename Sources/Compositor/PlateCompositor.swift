@@ -167,11 +167,10 @@ struct PlateCompositor {
             let illustrationX = (width - illustrationDrawWidth) / 2
             let illustrationY = familyY - familySize.height - 80 - illustrationDrawHeight
 
-            context.saveGState()
-            context.translateBy(x: illustrationX, y: illustrationY)
-            context.scaleBy(x: 1, y: -1)
-            context.draw(cgIllustration, in: CGRect(x: 0, y: 0, width: illustrationDrawWidth, height: illustrationDrawHeight))
-            context.restoreGState()
+            context.draw(
+                cgIllustration,
+                in: CGRect(x: illustrationX, y: illustrationY, width: illustrationDrawWidth, height: illustrationDrawHeight)
+            )
 
             let notesPanelMinY: CGFloat = margin + 150
 

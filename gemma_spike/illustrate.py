@@ -1,104 +1,80 @@
 #!/usr/bin/env python3
-"""Phase 0.1b illustration spike: FLUX schnell quantised MLX."""
+"""Phase 0.1b illustration spike: FLUX.1-schnell via DiffusionKit MLX."""
 
 import argparse
 import json
 import os
 import random
-import signal
 import sys
 import time
 from pathlib import Path
 
-DEFAULT_FLUX_MODEL_PATH = os.path.expanduser("~/.cache/flux-schnell-mlx")
-TIMEOUT_SECONDS = 300
+DEFAULT_MODEL_VERSION = "argmaxinc/mlx-FLUX.1-schnell-4bit-quantized"
+DEFAULT_HEIGHT = 1024
+DEFAULT_WIDTH = 1024
+DEFAULT_NUM_STEPS = 4
+DEFAULT_CFG_WEIGHT = 0.0
+FALLBACK_SUBJECT = "a plant in the style of 19th century botanical illustration"
 
-FALLBACK_SUBJECT_DESCRIPTION = "a plant in the style of 19th century botanical illustration"
 
+def build_prompt(identification_data: dict) -> str:
+    top = identification_data.get("top_candidate", {})
+    scientific_name = top.get("scientific_name") or "unknown species"
+    common_name = top.get("common_name") or "unknown common name"
 
-def build_flux_prompt(identification_data: dict) -> str:
-    scientific_name = identification_data.get("top_candidate", {}).get("scientific_name", "unknown")
-    common_name = identification_data.get("top_candidate", {}).get("common_name", "unknown")
-    visible_evidence = identification_data.get("visible_evidence", [])
+    visible = identification_data.get("visible_evidence", [])
+    subject = "; ".join(visible)
+    if len(subject) < 20:
+        subject = FALLBACK_SUBJECT
 
-    subject_description = "; ".join(visible_evidence)
-    if len(subject_description) < 20:
-        subject_description = FALLBACK_SUBJECT_DESCRIPTION
-
-    prompt = (
+    return (
         f"A botanical illustration of {scientific_name}, {common_name}, "
         f"in the style of 19th century natural history plates. "
-        f"{subject_description}. "
+        f"{subject}. "
         f"On plain neutral background. No text, no labels, no border."
     )
-    return prompt
 
 
-def load_flux_mlx():
+def generate_illustration(prompt: str, output_path: str, model_version: str, seed: int) -> dict:
     try:
-        from flux.aggregate import FluxImagePipeline
-        return FluxImagePipeline
+        from diffusionkit.mlx import FluxPipeline
     except ImportError:
-        return None
+        raise RuntimeError("diffusionkit not installed. Install with: pip install diffusionkit")
 
+    pipeline = FluxPipeline(
+        shift=1.0,
+        model_version=model_version,
+        low_memory_mode=True,
+        a16=True,
+        w16=True,
+    )
 
-def generate_illustration(
-    prompt: str,
-    output_path: str,
-    model_path: str,
-    timeout: int = TIMEOUT_SECONDS,
-) -> dict:
-    FluxImagePipeline = load_flux_mlx()
-    if FluxImagePipeline is None:
-        raise RuntimeError("flux-mlx not installed. Install from: https://github.com/bghira/flux-schnell")
+    start = time.time()
+    image, _ = pipeline.generate_image(
+        prompt,
+        cfg_weight=DEFAULT_CFG_WEIGHT,
+        num_steps=DEFAULT_NUM_STEPS,
+        seed=seed,
+        latent_size=(DEFAULT_HEIGHT // 8, DEFAULT_WIDTH // 8),
+    )
+    image.save(output_path)
 
-    if not os.path.isdir(model_path):
-        raise RuntimeError(f"Model directory not found: {model_path}")
-
-    seed = random.randint(0, 2**32 - 1)
-    start_time = time.time()
-
-    class TimeoutException(Exception):
-        pass
-
-    def timeout_handler(signum, frame):
-        raise TimeoutException(f"Generation timed out after {timeout} seconds")
-
-    old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(timeout)
-
-    try:
-        pipeline = FluxImagePipeline(model_path)
-        result = pipeline.generate(
-            prompt,
-            seed=seed,
-            output_path=output_path,
-            timeout=timeout,
-        )
-        elapsed = time.time() - start_time
-        return {
-            "illustration_path": output_path,
-            "seed": seed,
-            "timing_seconds": round(elapsed, 2),
-        }
-    except TimeoutException:
-        return {"error": "generation_failed"}
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old_handler)
+    return {
+        "illustration_path": output_path,
+        "seed": seed,
+        "timing_seconds": round(time.time() - start, 2),
+    }
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate botanical illustration via FLUX schnell MLX"
-    )
-    parser.add_argument("photo_path", help="Path to the source photo (for reference only)")
+    parser = argparse.ArgumentParser(description="Generate botanical illustration via FLUX.1-schnell")
+    parser.add_argument("photo_path", help="Path to the source photo (for reference only — unused)")
     parser.add_argument("identification_json_path", help="Path to Gemma JSON output")
     parser.add_argument("output_png_path", help="Path for output PNG")
     parser.add_argument(
-        "--model-path",
-        default=os.environ.get("FLUX_MODEL_PATH", DEFAULT_FLUX_MODEL_PATH),
-        help="Path to FLUX model directory",
+        "--model-version",
+        default=os.environ.get("FLUX_MODEL_VERSION", DEFAULT_MODEL_VERSION),
+        help="Hugging Face repo for the FLUX MLX weights",
     )
     args = parser.parse_args()
 
@@ -107,20 +83,23 @@ def main():
         sys.exit(1)
 
     try:
-        with open(args.identification_json_path, "r") as f:
+        with open(args.identification_json_path) as f:
             identification_data = json.load(f)
     except json.JSONDecodeError as e:
         print(json.dumps({"error": f"Invalid JSON: {e}"}), file=sys.stderr)
         sys.exit(1)
 
-    prompt = build_flux_prompt(identification_data)
+    prompt = build_prompt(identification_data)
+    seed = random.randint(0, 2**32 - 1)
 
-    result = generate_illustration(
-        prompt=prompt,
-        output_path=args.output_png_path,
-        model_path=args.model_path,
-        timeout=TIMEOUT_SECONDS,
-    )
+    output = Path(args.output_png_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        result = generate_illustration(prompt, str(output), args.model_version, seed)
+    except Exception as e:
+        print(json.dumps({"error": f"generation_failed: {e}"}), file=sys.stderr)
+        sys.exit(1)
 
     print(json.dumps(result))
 

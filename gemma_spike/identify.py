@@ -1,18 +1,14 @@
 #!/usr/bin/env python3
-"""Phase 0.1a identification spike: Gemma 4 31B Dense 4-bit via mlx-vlm."""
+"""Phase 0.1a identification spike: Gemma 4 31B via mlx-vlm."""
 
 import argparse
 import json
 import os
-import signal
-import subprocess
 import sys
 from pathlib import Path
 
-
 DEFAULT_MODEL_PATH = os.path.expanduser("~/.cache/gemma-4-31b-dense-4bit-mlx")
-TIMEOUT_SECONDS = 300
-
+DEFAULT_MAX_TOKENS = 2048
 
 SYSTEM_PROMPT = """You are a botanical identification assistant. Analyze the provided image and identify the plant.
 
@@ -37,41 +33,43 @@ Output ONLY valid JSON in this exact format, with no additional text:
 }"""
 
 USER_PROMPT = "Identify this plant. Provide your best assessment with supporting visual evidence."
-
-
 PROMPT = f"{SYSTEM_PROMPT}\n\n{USER_PROMPT}"
 
 
-def load_mlx_vlm():
+def identify(photo_path: str, model_path: str) -> str:
     try:
-        from mlx_vlm import MLXVLM
-        return MLXVLM
+        from mlx_vlm import load, generate
+        from mlx_vlm.prompt_utils import apply_chat_template
+        from mlx_vlm.utils import load_config
     except ImportError:
-        return None
-
-
-def identify_with_mlx_vlm(photo_path: str, model_path: str) -> dict:
-    MLXVLM = load_mlx_vlm()
-    if MLXVLM is None:
-        raise RuntimeError("mlx-vlm not installed. Install with: pip install mlx-vlm")
+        raise RuntimeError("mlx-vlm not installed. Install with: pip install -U mlx-vlm")
 
     if not os.path.isdir(model_path):
         raise RuntimeError(f"Model directory not found: {model_path}")
 
-    model = MLXVLM(model_path)
-    result = model.generate(photo_path, PROMPT, timeout=TIMEOUT_SECONDS)
-    return result
+    model, processor = load(model_path)
+    config = load_config(model_path)
+    formatted = apply_chat_template(processor, config, PROMPT, num_images=1)
+    result = generate(
+        model,
+        processor,
+        formatted,
+        image=[photo_path],
+        max_tokens=DEFAULT_MAX_TOKENS,
+        verbose=False,
+    )
+    return getattr(result, "text", result)
 
 
 def parse_json_output(raw_output: str) -> dict:
     raw_output = raw_output.strip()
 
-    if raw_output.startswith("```json"):
+    if raw_output.startswith("```"):
         lines = raw_output.split("\n")
         start = None
         end = None
         for i, line in enumerate(lines):
-            if line.strip() == "```json":
+            if line.strip().startswith("```") and start is None:
                 start = i + 1
             elif line.strip() == "```" and start is not None:
                 end = i
@@ -97,9 +95,8 @@ def validate_output(data: dict) -> None:
         if field not in data:
             raise ValueError(f"Missing required field: {field}")
 
-    confidence = data["model_confidence"]
-    if confidence not in ("high", "medium", "low"):
-        raise ValueError(f"Invalid confidence value: {confidence}")
+    if data["model_confidence"] not in ("high", "medium", "low"):
+        raise ValueError(f"Invalid confidence value: {data['model_confidence']}")
 
     top = data["top_candidate"]
     for field in ["common_name", "scientific_name", "family"]:
@@ -110,8 +107,11 @@ def validate_output(data: dict) -> None:
 def main():
     parser = argparse.ArgumentParser(description="Identify plants using Gemma 4 31B via mlx-vlm")
     parser.add_argument("photo_path", help="Path to the photo file")
-    parser.add_argument("--model-path", default=os.environ.get("GEMMA_MODEL_PATH", DEFAULT_MODEL_PATH),
-                       help="Path to the model directory")
+    parser.add_argument(
+        "--model-path",
+        default=os.environ.get("GEMMA_MODEL_PATH", DEFAULT_MODEL_PATH),
+        help="Path to the model directory",
+    )
     args = parser.parse_args()
 
     photo_path = Path(args.photo_path)
@@ -120,7 +120,7 @@ def main():
         sys.exit(1)
 
     try:
-        raw_output = identify_with_mlx_vlm(str(photo_path), args.model_path)
+        raw_output = identify(str(photo_path), args.model_path)
         data = parse_json_output(raw_output)
         validate_output(data)
         print(json.dumps(data, indent=2))

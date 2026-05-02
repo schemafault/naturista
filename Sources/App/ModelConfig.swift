@@ -2,7 +2,7 @@ import Foundation
 
 enum ModelConfig {
     static let gemmaPath = "~/.cache/gemma-4-31b-dense-4bit-mlx"
-    static let fluxPath = "~/.cache/flux-schnell-mlx"
+    static let pythonPath = "~/.cache/naturista-venv/bin/python3"
 }
 
 enum AppPaths {

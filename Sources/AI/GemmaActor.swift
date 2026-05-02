@@ -97,8 +97,7 @@ actor GemmaActor {
 
         let request: [String: Any] = [
             "action": "identify",
-            "photo_path": photoPath,
-            "model_path": NSString(string: ModelConfig.gemmaPath).expandingTildeInPath
+            "photo_path": photoPath
         ]
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: request, options: []),
@@ -182,19 +181,22 @@ actor GemmaActor {
         }
 
         let pythonProcess = Process()
-        pythonProcess.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        pythonProcess.executableURL = URL(fileURLWithPath: NSString(string: ModelConfig.pythonPath).expandingTildeInPath)
         pythonProcess.arguments = [scriptPath]
 
         let input = Pipe()
         let output = Pipe()
         pythonProcess.standardOutput = output
         pythonProcess.standardInput = input
-        pythonProcess.standardError = FileHandle.nullDevice
+        let stderrLogPath = "/tmp/naturista_gemma.log"
+        FileManager.default.createFile(atPath: stderrLogPath, contents: nil)
+        pythonProcess.standardError = FileHandle(forWritingAtPath: stderrLogPath) ?? FileHandle.nullDevice
 
         let errorPipe = Pipe()
         pythonProcess.environment = [
             "PYNO_SHOW_ASSET_WARNING": "1",
-            "PYTHONUNBUFFERED": "1"
+            "PYTHONUNBUFFERED": "1",
+            "GEMMA_MODEL_PATH": NSString(string: ModelConfig.gemmaPath).expandingTildeInPath
         ]
 
         var processExitedEarly = false

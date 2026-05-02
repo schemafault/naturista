@@ -79,8 +79,7 @@ actor FluxActor {
             "action": "generate",
             "identification_json_path": identificationJsonPath.path,
             "photo_path": photoPath,
-            "output_path": outputPath,
-            "model_path": NSString(string: ModelConfig.fluxPath).expandingTildeInPath
+            "output_path": outputPath
         ]
 
         guard let jsonData = try? JSONSerialization.data(withJSONObject: request, options: []),
@@ -159,14 +158,16 @@ actor FluxActor {
         }
 
         let pythonProcess = Process()
-        pythonProcess.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        pythonProcess.executableURL = URL(fileURLWithPath: NSString(string: ModelConfig.pythonPath).expandingTildeInPath)
         pythonProcess.arguments = [scriptPath]
 
         let input = Pipe()
         let output = Pipe()
         pythonProcess.standardOutput = output
         pythonProcess.standardInput = input
-        pythonProcess.standardError = FileHandle.nullDevice
+        let stderrLogPath = "/tmp/naturista_flux.log"
+        FileManager.default.createFile(atPath: stderrLogPath, contents: nil)
+        pythonProcess.standardError = FileHandle(forWritingAtPath: stderrLogPath) ?? FileHandle.nullDevice
 
         pythonProcess.environment = [
             "PYTHONUNBUFFERED": "1"
