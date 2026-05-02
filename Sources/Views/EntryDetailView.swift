@@ -20,7 +20,6 @@ struct EntryDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             mainImage
-                .id(imageRefreshID)
                 .frame(maxHeight: 400)
                 .frame(maxWidth: .infinity)
                 .background(Color.gray.opacity(0.1))
@@ -44,17 +43,8 @@ struct EntryDetailView: View {
         if let plateFilename = entry.plateFilename {
             let url = AppPaths.plates.appendingPathComponent(plateFilename)
             if FileManager.default.fileExists(atPath: url.path) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                    case .failure, .empty:
-                        illustrationImageView
-                    @unknown default:
-                        illustrationImageView
-                    }
+                LocalDiskImage(url: url, refreshToken: imageRefreshID, contentMode: .fit) {
+                    illustrationImageView
                 }
             } else {
                 illustrationImageView
@@ -69,17 +59,8 @@ struct EntryDetailView: View {
         if let illustrationFilename = entry.illustrationFilename {
             let url = AppPaths.illustrations.appendingPathComponent(illustrationFilename)
             if FileManager.default.fileExists(atPath: url.path) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                    case .failure, .empty:
-                        workingImageView
-                    @unknown default:
-                        workingImageView
-                    }
+                LocalDiskImage(url: url, refreshToken: imageRefreshID, contentMode: .fit) {
+                    workingImageView
                 }
             } else {
                 workingImageView
@@ -93,17 +74,8 @@ struct EntryDetailView: View {
     private var workingImageView: some View {
         let workingURL = AppPaths.working.appendingPathComponent(entry.workingImageFilename)
         if FileManager.default.fileExists(atPath: workingURL.path) {
-            AsyncImage(url: workingURL) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                case .failure, .empty:
-                    placeholderImageView
-                @unknown default:
-                    placeholderImageView
-                }
+            LocalDiskImage(url: workingURL, refreshToken: imageRefreshID, contentMode: .fit) {
+                placeholderImageView
             }
         } else {
             placeholderImageView
@@ -483,5 +455,46 @@ struct EntryDetailView: View {
                 isRetrying = false
             }
         }
+    }
+}
+
+private struct LocalDiskImage<Fallback: View>: View {
+    let url: URL
+    let refreshToken: UUID
+    let contentMode: ContentMode
+    @ViewBuilder var fallback: () -> Fallback
+
+    @State private var image: NSImage?
+    @State private var didLoad = false
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: contentMode)
+            } else if didLoad {
+                fallback()
+            } else {
+                Color.clear
+            }
+        }
+        .task(id: TaskKey(url: url, token: refreshToken)) {
+            image = nil
+            didLoad = false
+            let target = url
+            let loaded = await Task.detached(priority: .userInitiated) { () -> NSImage? in
+                guard let data = try? Data(contentsOf: target) else { return nil }
+                return NSImage(data: data)
+            }.value
+            if Task.isCancelled { return }
+            image = loaded
+            didLoad = true
+        }
+    }
+
+    private struct TaskKey: Hashable {
+        let url: URL
+        let token: UUID
     }
 }
