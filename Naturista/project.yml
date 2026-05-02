@@ -1,0 +1,72 @@
+name: Naturista
+options:
+  bundleIdPrefix: com.naturista
+  deploymentTarget:
+    macOS: "15.0"
+  xcodeVersion: "15.0"
+  generateEmptyDirectories: true
+  groupSortPosition: top
+
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift
+    from: "6.29.0"
+
+settings:
+  base:
+    PRODUCT_NAME: Naturista
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.9"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    ENABLE_HARDENED_RUNTIME: YES
+
+targets:
+  Naturista:
+    type: application
+    platform: macOS
+    sources:
+      - path: ../Sources
+        type: group
+      - path: ../Resources
+        type: group
+    settings:
+      base:
+        INFOPLIST_FILE: Resources/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.naturista.app
+        COMBINE_HIDPI_IMAGES: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        LD_RUNPATH_SEARCH_PATHS: "@executable_path/../Frameworks"
+        SWIFT_EMIT_LOC_STRINGS: YES
+    info:
+      path: Resources/Info.plist
+      properties:
+        CFBundleName: Naturista
+        CFBundleDisplayName: Naturista
+        CFBundleIdentifier: com.naturista.app
+        CFBundleVersion: "1"
+        CFBundleShortVersionString: "0.1.0"
+        CFBundlePackageType: APPL
+        CFBundleExecutable: Naturista
+        LSMinimumSystemVersion: "15.0"
+        LSApplicationCategoryType: public.app-category.nature
+        NSHumanReadableCopyright: "Copyright © 2026. All rights reserved."
+        NSPrincipalClass: NSApplication
+        NSHighResolutionCapable: true
+    entitlements:
+      path: Resources/Naturista.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+        com.apple.security.files.user-selected.read-write: true
+    dependencies:
+      - package: GRDB
+
+schemes:
+  Naturista:
+    build:
+      targets:
+        Naturista: all
+    run:
+      config: Debug
