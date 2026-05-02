@@ -105,7 +105,10 @@ actor PipelineService {
             illustrationFilename = URL(fileURLWithPath: illustrationPath).lastPathComponent
             currentEntry.illustrationFilename = illustrationFilename
             try await DatabaseService.shared.saveEntry(currentEntry)
+            // FLUX is done — free its ~7GB before compose runs.
+            await FluxActor.shared.shutdown()
         } catch {
+            await FluxActor.shared.shutdown()
             currentEntry.userStatus = "failed"
             currentEntry.notes = "FLUX generation failed: \(error.localizedDescription)"
             try await DatabaseService.shared.saveEntry(currentEntry)
@@ -184,7 +187,10 @@ actor PipelineService {
             illustrationFilename = URL(fileURLWithPath: illustrationPath).lastPathComponent
             currentEntry.illustrationFilename = illustrationFilename
             try await DatabaseService.shared.saveEntry(currentEntry)
+            // FLUX is done — free its ~7GB before compose runs.
+            await FluxActor.shared.shutdown()
         } catch {
+            await FluxActor.shared.shutdown()
             currentEntry.userStatus = "failed"
             currentEntry.notes = "FLUX generation failed: \(error.localizedDescription)"
             try await DatabaseService.shared.saveEntry(currentEntry)
