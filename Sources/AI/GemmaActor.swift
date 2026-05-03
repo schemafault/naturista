@@ -75,9 +75,11 @@ actor GemmaActor {
     private init() {
         self.transport = PythonProcessTransport(config: .init(
             scriptPath: GemmaActor.scriptPath,
-            environment: [
-                "GEMMA_MODEL_PATH": NSString(string: ModelConfig.gemmaPath).expandingTildeInPath
-            ],
+            environment: {
+                [
+                    "GEMMA_MODEL_PATH": NSString(string: ModelConfig.gemmaPath).expandingTildeInPath
+                ]
+            },
             timeoutSeconds: 310,
             warmupSeconds: 2,
             stderrLogURL: URL(fileURLWithPath: "/tmp/naturista_gemma.log")

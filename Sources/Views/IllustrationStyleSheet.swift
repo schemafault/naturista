@@ -1,8 +1,9 @@
 import SwiftUI
 
-// User-facing editor for the four Flux per-kingdom prompt templates.
-// Lives behind the "Illustration style" trigger in the LibraryView sidebar.
-// Edits are held in @State and only committed to UserDefaults on Save.
+// User-facing editor for the four Flux per-kingdom prompt templates and the
+// Gemma identification-model picker. Lives behind the "Illustration style"
+// trigger in the LibraryView sidebar. Edits are held in @State and only
+// committed (UserDefaults / model swap) on Save.
 
 struct IllustrationStyleSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -14,7 +15,16 @@ struct IllustrationStyleSheet: View {
     @State private var showCloseConfirm = false
     @State private var showResetAllConfirm = false
 
+    @State private var selectedModel: GemmaModel = GemmaModelStore.shared.selected
+    @State private var isDownloading = false
+    @State private var downloadingModel: GemmaModel? = nil
+    @State private var modelError: String? = nil
+
+    private var savedModel: GemmaModel { GemmaModelStore.shared.selected }
+    private var modelChanged: Bool { selectedModel != savedModel }
+
     private var isDirty: Bool {
+        if modelChanged { return true }
         for kingdom in allKingdoms {
             let saved = IllustrationPromptStore.shared.template(for: kingdom)
             if (drafts[kingdom] ?? saved) != saved { return true }
@@ -31,6 +41,8 @@ struct IllustrationStyleSheet: View {
                     ForEach(allKingdoms, id: \.self) { kingdom in
                         editor(for: kingdom)
                     }
+                    Hairline()
+                    modelSection
                 }
                 .padding(.horizontal, 36)
                 .padding(.vertical, 28)
@@ -41,6 +53,11 @@ struct IllustrationStyleSheet: View {
         }
         .frame(width: 760, height: 720)
         .background(DS.paper)
+        .overlay {
+            if isDownloading {
+                downloadOverlay
+            }
+        }
         .onAppear { loadDrafts() }
         .confirmationDialog(
             "Discard unsaved changes?",
@@ -144,6 +161,113 @@ struct IllustrationStyleSheet: View {
         }
     }
 
+    // MARK: - Identification model picker
+
+    private var modelSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                Eyebrow(text: "Identification model")
+                if modelChanged {
+                    MonoLabel(text: "MODIFIED", size: 9.5, color: DS.amber)
+                }
+            }
+
+            Text("Pick the local VLM that handles photo identification. Save downloads weights on first use of an option.")
+                .font(DS.sans(12))
+                .foregroundColor(DS.inkSoft)
+                .lineLimit(2)
+
+            VStack(spacing: 0) {
+                ForEach(GemmaModel.allCases) { option in
+                    modelRow(option)
+                    if option != GemmaModel.allCases.last { Hairline() }
+                }
+            }
+            .background(DS.paperDeep)
+            .overlay(Rectangle().stroke(DS.hairline, lineWidth: 1))
+
+            if let modelError {
+                Text(modelError)
+                    .font(DS.sans(11))
+                    .foregroundColor(DS.rust)
+                    .lineLimit(3)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func modelRow(_ option: GemmaModel) -> some View {
+        let isSelected = selectedModel == option
+        let installed = option.isInstalled
+        let isDefault = option == .gemma3_12b
+        Button(action: { selectedModel = option }) {
+            HStack(spacing: 14) {
+                radioGlyph(isSelected: isSelected)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 8) {
+                        Text(option.displayName)
+                            .font(DS.sans(13, weight: isSelected ? .semibold : .medium))
+                            .foregroundColor(DS.ink)
+                        if isDefault {
+                            MonoLabel(text: "DEFAULT", size: 9, color: DS.muted)
+                        }
+                        if installed {
+                            MonoLabel(text: "INSTALLED", size: 9, color: DS.sage)
+                        } else {
+                            MonoLabel(text: "DOWNLOAD ~\(formatGB(option.approxSizeGB))", size: 9, color: DS.amber)
+                        }
+                    }
+                    Text(option.blurb)
+                        .font(DS.sans(11.5))
+                        .foregroundColor(DS.inkSoft)
+                        .lineLimit(2)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+            .background(isSelected ? DS.paper : Color.clear)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func radioGlyph(isSelected: Bool) -> some View {
+        ZStack {
+            Circle().stroke(isSelected ? DS.ink : DS.hairline, lineWidth: 1)
+                .frame(width: 14, height: 14)
+            if isSelected {
+                Circle().fill(DS.ink).frame(width: 7, height: 7)
+            }
+        }
+    }
+
+    private func formatGB(_ gb: Double) -> String {
+        gb.truncatingRemainder(dividingBy: 1) == 0
+            ? "\(Int(gb)) GB"
+            : String(format: "%.1f GB", gb)
+    }
+
+    // MARK: - Download overlay
+
+    private var downloadOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.35).ignoresSafeArea()
+            VStack(spacing: 16) {
+                ProgressView().controlSize(.large)
+                Text("Downloading \(downloadingModel?.displayName ?? "model")…")
+                    .font(DS.serif(16, weight: .regular))
+                    .foregroundColor(DS.ink)
+                Text("This is a one-time download. Keep the window open.")
+                    .font(DS.sans(11.5))
+                    .foregroundColor(DS.inkSoft)
+            }
+            .padding(28)
+            .background(DS.paper)
+            .overlay(Rectangle().stroke(DS.hairline, lineWidth: 1))
+        }
+    }
+
     // MARK: - Footer
 
     private var footer: some View {
@@ -157,9 +281,11 @@ struct IllustrationStyleSheet: View {
                 if isDirty { showCloseConfirm = true } else { dismiss() }
             }
             .buttonStyle(QuietButtonStyle())
+            .disabled(isDownloading)
 
             Button("Save") { save() }
                 .buttonStyle(PrimaryButtonStyle())
+                .disabled(isDownloading)
         }
         .padding(.horizontal, 36)
         .padding(.vertical, 18)
@@ -172,11 +298,12 @@ struct IllustrationStyleSheet: View {
         for kingdom in allKingdoms {
             drafts[kingdom] = IllustrationPromptStore.shared.template(for: kingdom)
         }
+        selectedModel = GemmaModelStore.shared.selected
+        modelError = nil
     }
 
     private func save() {
-        // Validate every draft. Block save if any has unknown placeholders;
-        // surface the offenders in each row's inline error.
+        // Validate prompts first; block on any unknown placeholders.
         var nextErrors: [Kingdom: String] = [:]
         for kingdom in allKingdoms {
             let draft = drafts[kingdom] ?? IllustrationPromptStore.shared.template(for: kingdom)
@@ -189,11 +316,48 @@ struct IllustrationStyleSheet: View {
         errors = nextErrors
         if !nextErrors.isEmpty { return }
 
-        var toPersist: [Kingdom: String] = [:]
-        for kingdom in allKingdoms {
-            toPersist[kingdom] = drafts[kingdom] ?? IllustrationPromptStore.shared.template(for: kingdom)
+        let chosen = selectedModel
+        let needsDownload = !chosen.isInstalled
+        modelError = nil
+
+        Task {
+            if needsDownload {
+                await MainActor.run {
+                    downloadingModel = chosen
+                    isDownloading = true
+                }
+                do {
+                    try await GemmaModelDownloader.shared.download(chosen)
+                } catch {
+                    await MainActor.run {
+                        isDownloading = false
+                        downloadingModel = nil
+                        modelError = error.localizedDescription
+                    }
+                    return
+                }
+                await MainActor.run {
+                    isDownloading = false
+                    downloadingModel = nil
+                }
+            }
+
+            // Persist prompt overrides.
+            var toPersist: [Kingdom: String] = [:]
+            for kingdom in allKingdoms {
+                toPersist[kingdom] = drafts[kingdom] ?? IllustrationPromptStore.shared.template(for: kingdom)
+            }
+            IllustrationPromptStore.shared.setOverrides(toPersist)
+
+            // Persist model selection. If the model changed, shut down the
+            // current Gemma subprocess so the next identify spawns a fresh one
+            // with the new GEMMA_MODEL_PATH (read lazily via the env closure).
+            if chosen != GemmaModelStore.shared.selected {
+                GemmaModelStore.shared.setSelected(chosen)
+                await GemmaActor.shared.shutdown()
+            }
+
+            await MainActor.run { dismiss() }
         }
-        IllustrationPromptStore.shared.setOverrides(toPersist)
-        dismiss()
     }
 }

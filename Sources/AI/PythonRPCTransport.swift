@@ -70,7 +70,9 @@ protocol PythonRPCTransport: Actor {
 actor PythonProcessTransport: PythonRPCTransport {
     struct Config: Sendable {
         let scriptPath: String
-        let environment: [String: String]
+        // Closure so each subprocess restart picks up the freshly-computed env
+        // (e.g. GEMMA_MODEL_PATH after the user changes the selected model).
+        let environment: @Sendable () -> [String: String]
         let timeoutSeconds: TimeInterval
         let warmupSeconds: TimeInterval
         let stderrLogURL: URL
@@ -161,7 +163,7 @@ actor PythonProcessTransport: PythonRPCTransport {
 
         let executableURL = URL(fileURLWithPath: NSString(string: ModelConfig.pythonPath).expandingTildeInPath)
 
-        var env = config.environment
+        var env = config.environment()
         env["PYTHONUNBUFFERED"] = "1"
 
         let sub: any RPCSubprocess
