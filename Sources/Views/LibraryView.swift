@@ -15,12 +15,16 @@ struct LibraryView: View {
 
     private var filtered: [Entry] {
         entries.filter { e in
-            if let fam = activeFamily, e.family != fam { return false }
+            let id = e.identification
+            let family = id.family ?? ""
+            if let fam = activeFamily, family != fam { return false }
             if query.isEmpty { return true }
             let q = query.lowercased()
-            return e.commonName.lowercased().contains(q)
-                || e.scientificName.lowercased().contains(q)
-                || e.family.lowercased().contains(q)
+            let common = id.commonName ?? ""
+            let scientific = id.scientificName ?? ""
+            return common.lowercased().contains(q)
+                || scientific.lowercased().contains(q)
+                || family.lowercased().contains(q)
         }
     }
 
@@ -37,8 +41,9 @@ struct LibraryView: View {
 
     private var familyCounts: [(String, Int)] {
         var counts: [String: Int] = [:]
-        for e in entries where !e.family.isEmpty {
-            counts[e.family, default: 0] += 1
+        for e in entries {
+            guard let family = e.identification.family, !family.isEmpty else { continue }
+            counts[family, default: 0] += 1
         }
         return counts.sorted { lhs, rhs in
             if lhs.value != rhs.value { return lhs.value > rhs.value }
@@ -178,7 +183,7 @@ struct LibraryView: View {
                     HStack(spacing: 4) {
                         Text("\(filtered.count) \(filtered.count == 1 ? "plate" : "plates")")
                         Text("·")
-                        Text("\(Set(filtered.map { $0.family }.filter { !$0.isEmpty }).count) families")
+                        Text("\(Set(filtered.compactMap { $0.identification.family }.filter { !$0.isEmpty }).count) families")
                     }
                     .font(DS.sans(11))
                     .tracking(0.4)
@@ -297,7 +302,7 @@ struct LibraryView: View {
                 let fetched = try await DatabaseService.shared.fetchAllEntries()
                 await MainActor.run {
                     entries = fetched
-                    if let fam = activeFamily, !fetched.contains(where: { $0.family == fam }) {
+                    if let fam = activeFamily, !fetched.contains(where: { $0.identification.family == fam }) {
                         activeFamily = nil
                     }
                     if page >= totalPages { page = 0 }

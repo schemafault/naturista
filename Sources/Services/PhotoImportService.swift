@@ -31,14 +31,13 @@ actor PhotoImportService {
 
         let workingPath = AppPaths.working.appendingPathComponent(workingFilename).path
         do {
-            let identification = try await GemmaActor.shared.identify(photoPath: workingPath)
-            let encoder = JSONEncoder()
-            entry.identificationJson = String(data: try encoder.encode(identification), encoding: .utf8) ?? ""
-            entry.modelConfidence = identification.modelConfidence
+            let identification = try await ModelLease.shared.withExclusive(.identification) {
+                try await GemmaActor.shared.identify(photoPath: workingPath)
+            }
+            entry.setIdentification(.success(identification))
             try await DatabaseService.shared.saveEntry(entry)
         } catch {
-            let encoder = JSONEncoder()
-            entry.identificationJson = String(data: try encoder.encode(["error": error.localizedDescription]), encoding: .utf8) ?? ""
+            entry.setIdentification(.failure(error.localizedDescription))
             entry.userStatus = "failed"
             try await DatabaseService.shared.saveEntry(entry)
         }

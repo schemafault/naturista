@@ -40,16 +40,18 @@ struct PlateFrameView: View {
     }
 
     private var header: some View {
-        VStack(spacing: 6) {
+        let id = entry.identification
+        let common = id.commonName ?? "Unidentified"
+        return VStack(spacing: 6) {
             MonoLabel(text: "PLATE \(plateNumber)", color: DS.muted)
                 .padding(.bottom, 8)
-            Text(entry.commonName.uppercased())
+            Text(common.uppercased())
                 .font(DS.serif(28, weight: .regular))
                 .tracking(1.2)
                 .foregroundColor(DS.ink)
                 .multilineTextAlignment(.center)
-            if !entry.scientificName.isEmpty {
-                Text(entry.scientificName)
+            if let scientific = id.scientificName, !scientific.isEmpty {
+                Text(scientific)
                     .font(DS.serif(15, italic: true))
                     .foregroundColor(DS.inkSoft)
                     .padding(.top, 2)
@@ -59,6 +61,7 @@ struct PlateFrameView: View {
 
     @ViewBuilder
     private var illustrationSlot: some View {
+        let placeholderLabel = entry.identification.commonName ?? "Unidentified"
         Group {
             if let preloaded = preloadedIllustration {
                 Image(nsImage: preloaded)
@@ -68,13 +71,13 @@ struct PlateFrameView: View {
                 let url = AppPaths.illustrations.appendingPathComponent(illus)
                 if FileManager.default.fileExists(atPath: url.path) {
                     LocalImage(url: url, refreshToken: refreshToken) {
-                        PlatePlaceholder(label: entry.commonName)
+                        PlatePlaceholder(label: placeholderLabel)
                     }
                 } else {
-                    PlatePlaceholder(label: entry.commonName)
+                    PlatePlaceholder(label: placeholderLabel)
                 }
             } else {
-                PlatePlaceholder(label: entry.commonName)
+                PlatePlaceholder(label: placeholderLabel)
             }
         }
         .frame(maxWidth: .infinity)
@@ -84,8 +87,8 @@ struct PlateFrameView: View {
 
     private var footer: some View {
         HStack {
-            if !entry.family.isEmpty {
-                Text(entry.family)
+            if let family = entry.identification.family, !family.isEmpty {
+                Text(family)
                     .font(DS.serif(13, italic: true))
                     .foregroundColor(DS.mutedDeep)
             }
