@@ -74,6 +74,13 @@ actor FluxActor {
 
         let illustrationFilename = "\(entryId.uuidString)_illustration.png"
         let outputPath = AppPaths.illustrations.appendingPathComponent(illustrationFilename).path
+        print("[flux] requesting output_path=\(outputPath)")
+        if FileManager.default.fileExists(atPath: outputPath) {
+            let preAttrs = try? FileManager.default.attributesOfItem(atPath: outputPath)
+            let preSize = (preAttrs?[.size] as? Int) ?? -1
+            let preMtime = (preAttrs?[.modificationDate] as? Date)?.description ?? "<unknown>"
+            print("[flux] pre-existing file size=\(preSize) mtime=\(preMtime)")
+        }
 
         let request: [String: Any] = [
             "action": "generate",
@@ -134,6 +141,7 @@ actor FluxActor {
         do {
             let decoder = JSONDecoder()
             let generationResult = try decoder.decode(FluxGenerationResult.self, from: data)
+            print("[flux] response illustration_path=\(generationResult.illustrationPath) seed=\(generationResult.seed) timing=\(generationResult.timingSeconds)s")
             return generationResult.illustrationPath
         } catch let error as FluxError {
             throw error

@@ -49,9 +49,11 @@ actor PipelineService {
     // illustration. The plate composition is rendered live by SwiftUI,
     // so there's nothing else to recompose.
     func regenerateIllustration(entryId: UUID) async throws {
+        print("[regenerate] start entryId=\(entryId.uuidString)")
         guard var currentEntry = try await DatabaseService.shared.fetchEntry(id: entryId.uuidString) else {
             throw PipelineError.entryNotFound
         }
+        print("[regenerate] existing illustrationFilename=\(currentEntry.illustrationFilename ?? "<nil>")")
 
         let identification: IdentificationResult
         do {
@@ -70,10 +72,17 @@ actor PipelineService {
                 identification: identification,
                 entryId: entryId
             )
+            print("[regenerate] FluxActor returned path=\(illustrationPath)")
+            let attrs = try? FileManager.default.attributesOfItem(atPath: illustrationPath)
+            let size = (attrs?[.size] as? Int) ?? -1
+            let mtime = (attrs?[.modificationDate] as? Date)?.description ?? "<unknown>"
+            print("[regenerate] file size=\(size) mtime=\(mtime)")
             currentEntry.illustrationFilename = URL(fileURLWithPath: illustrationPath).lastPathComponent
             try await DatabaseService.shared.saveEntry(currentEntry)
+            print("[regenerate] saved illustrationFilename=\(currentEntry.illustrationFilename ?? "<nil>")")
             await FluxActor.shared.shutdown()
         } catch {
+            print("[regenerate] error: \(error)")
             await FluxActor.shared.shutdown()
             throw PipelineError.fluxFailed(error.localizedDescription)
         }

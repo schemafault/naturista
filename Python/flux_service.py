@@ -97,6 +97,9 @@ def handle_generate(params: dict) -> dict:
 
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
+    pre_existed = output.exists()
+    pre_size = output.stat().st_size if pre_existed else -1
+    print(f"[flux.py] generate output={output} pre_existed={pre_existed} pre_size={pre_size} seed={seed}", file=sys.stderr, flush=True)
 
     start = time.time()
     try:
@@ -109,10 +112,16 @@ def handle_generate(params: dict) -> dict:
             num_inference_steps=num_steps,
             scheduler=DEFAULT_SCHEDULER,
         )
-        _image_util.save_image(image=image, path=str(output))
+        # Call GeneratedImage.save directly. ImageUtil.save_image would re-dispatch
+        # to GeneratedImage.save with default overwrite=False, silently writing to a
+        # numbered sibling (_1.png, _2.png, ...) instead of replacing the file.
+        image.save(path=str(output), overwrite=True)
     except Exception as e:
+        print(f"[flux.py] generation_failed: {e}", file=sys.stderr, flush=True)
         return {"error": f"generation_failed: {e}"}
 
+    post_size = output.stat().st_size if output.exists() else -1
+    print(f"[flux.py] wrote {output} post_size={post_size}", file=sys.stderr, flush=True)
     return {
         "illustration_path": str(output.resolve()),
         "seed": seed,
