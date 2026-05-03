@@ -19,12 +19,23 @@ actor PhotoImportService {
         let workingURL = try await ImageService.shared.createWorkingCopy(sourceURL: originalDestination)
         let workingFilename = workingURL.lastPathComponent
 
+        // Thumbnail is best-effort: a failure here must not abort import.
+        // The backfill service will retry on next launch for any nil rows.
+        var thumbnailFilename: String? = nil
+        do {
+            let thumbURL = try await ImageService.shared.createThumbnail(from: workingURL)
+            thumbnailFilename = thumbURL.lastPathComponent
+        } catch {
+            print("[import] thumbnail generation failed: \(error)")
+        }
+
         var entry = Entry(
             id: id,
             createdAt: ISO8601DateFormatter().string(from: Date()),
             capturedAt: capturedAt,
             originalImageFilename: originalFilename,
-            workingImageFilename: workingFilename
+            workingImageFilename: workingFilename,
+            thumbnailFilename: thumbnailFilename
         )
 
         try await DatabaseService.shared.saveEntry(entry)

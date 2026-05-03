@@ -41,6 +41,47 @@ actor ImageService {
         return formatter.date(from: dateString)
     }
 
+    // CGImageSourceCreateThumbnailAtIndex never decodes the full image —
+    // it reads the smallest representation that satisfies maxPixelSize, so
+    // a 24MP source becomes a 512px thumb without a full RGBA decode pass.
+    func createThumbnail(from sourceURL: URL, maxPixelSize: Int = 512, jpegQuality: Double = 0.8) throws -> URL {
+        guard let imageSource = CGImageSourceCreateWithURL(sourceURL as CFURL, nil) else {
+            throw ImageError.cannotCreateImageSource
+        }
+
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+        ]
+
+        guard let thumb = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
+            throw ImageError.cannotReadImage
+        }
+
+        let outputURL = AppPaths.thumbnails.appendingPathComponent(UUID().uuidString + "_thumb.jpg")
+
+        guard let destination = CGImageDestinationCreateWithURL(
+            outputURL as CFURL,
+            UTType.jpeg.identifier as CFString,
+            1,
+            nil
+        ) else {
+            throw ImageError.cannotCreateDestination
+        }
+
+        let destOptions: [String: Any] = [
+            kCGImageDestinationLossyCompressionQuality as String: jpegQuality
+        ]
+        CGImageDestinationAddImage(destination, thumb, destOptions as CFDictionary)
+
+        if !CGImageDestinationFinalize(destination) {
+            throw ImageError.writeFailed
+        }
+
+        return outputURL
+    }
+
     func createWorkingCopy(sourceURL: URL, maxPixels: Int = 4_000_000, jpegQuality: Double = 0.8) throws -> URL {
         guard let imageSource = CGImageSourceCreateWithURL(sourceURL as CFURL, nil) else {
             throw ImageError.cannotCreateImageSource

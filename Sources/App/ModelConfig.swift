@@ -202,6 +202,10 @@ enum AppPaths {
         assets.appendingPathComponent("working", isDirectory: true)
     }
 
+    static var thumbnails: URL {
+        assets.appendingPathComponent("thumbnails", isDirectory: true)
+    }
+
     static var generated: URL {
         applicationSupport.appendingPathComponent("generated", isDirectory: true)
     }
@@ -219,7 +223,7 @@ enum AppPaths {
     }
 
     static func ensureDirectories() {
-        let dirs = [assets, originals, working, generated, illustrations, plates, models]
+        let dirs = [assets, originals, working, thumbnails, generated, illustrations, plates, models]
         let fm = FileManager.default
         for dir in dirs {
             if !fm.fileExists(atPath: dir.path) {

@@ -25,6 +25,27 @@ actor PipelineService {
 
     private init() {}
 
+    // After FLUX completes, the gallery should preview the finished plate
+    // rather than the working photograph. Regenerate the thumbnail from
+    // the new illustration, delete the old thumbnail file, and evict the
+    // cache so SwiftUI redecodes on next access. Best-effort: a failure
+    // here leaves the entry with the prior thumbnail intact.
+    private func refreshThumbnail(for entry: inout Entry, illustrationPath: String) async {
+        let illustrationURL = URL(fileURLWithPath: illustrationPath)
+        do {
+            let newThumbURL = try await ImageService.shared.createThumbnail(from: illustrationURL)
+            let oldFilename = entry.thumbnailFilename
+            entry.thumbnailFilename = newThumbURL.lastPathComponent
+            if let oldFilename, oldFilename != newThumbURL.lastPathComponent {
+                let oldURL = AppPaths.thumbnails.appendingPathComponent(oldFilename)
+                try? FileManager.default.removeItem(at: oldURL)
+                ImageCache.shared.evict(oldURL)
+            }
+        } catch {
+            print("[pipeline] thumbnail regen failed: \(error)")
+        }
+    }
+
     func deleteEntry(entryId: UUID) async throws {
         let entry = try await DatabaseService.shared.fetchEntry(id: entryId.uuidString)
 
@@ -35,10 +56,12 @@ actor PipelineService {
                 AppPaths.working.appendingPathComponent(entry.workingImageFilename),
                 entry.illustrationFilename.map { AppPaths.illustrations.appendingPathComponent($0) },
                 entry.plateFilename.map { AppPaths.plates.appendingPathComponent($0) },
+                entry.thumbnailFilename.map { AppPaths.thumbnails.appendingPathComponent($0) },
             ].compactMap { $0 }
 
             for url in candidates where fm.fileExists(atPath: url.path) {
                 try? fm.removeItem(at: url)
+                ImageCache.shared.evict(url)
             }
         }
 
@@ -72,6 +95,7 @@ actor PipelineService {
             let mtime = (attrs?[.modificationDate] as? Date)?.description ?? "<unknown>"
             print("[regenerate] file size=\(size) mtime=\(mtime)")
             currentEntry.illustrationFilename = URL(fileURLWithPath: illustrationPath).lastPathComponent
+            await refreshThumbnail(for: &currentEntry, illustrationPath: illustrationPath)
             try await DatabaseService.shared.saveEntry(currentEntry)
             print("[regenerate] saved illustrationFilename=\(currentEntry.illustrationFilename ?? "<nil>")")
         } catch {
@@ -100,6 +124,7 @@ actor PipelineService {
                 )
             }
             currentEntry.illustrationFilename = URL(fileURLWithPath: illustrationPath).lastPathComponent
+            await refreshThumbnail(for: &currentEntry, illustrationPath: illustrationPath)
             currentEntry.userStatus = "unreviewed"
             try await DatabaseService.shared.saveEntry(currentEntry)
         } catch {
@@ -140,6 +165,7 @@ actor PipelineService {
                 )
             }
             currentEntry.illustrationFilename = URL(fileURLWithPath: illustrationPath).lastPathComponent
+            await refreshThumbnail(for: &currentEntry, illustrationPath: illustrationPath)
             currentEntry.userStatus = "unreviewed"
             try await DatabaseService.shared.saveEntry(currentEntry)
         } catch {

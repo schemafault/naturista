@@ -12,6 +12,7 @@ struct Entry: Codable, FetchableRecord, PersistableRecord, Identifiable {
     var userStatus: String = "unreviewed"
     var illustrationFilename: String? = nil
     var plateFilename: String? = nil
+    var thumbnailFilename: String? = nil
     var notes: String = ""
     var pinned: Bool = false
 
@@ -20,7 +21,7 @@ struct Entry: Codable, FetchableRecord, PersistableRecord, Identifiable {
     enum Columns: String, ColumnExpression {
         case id, createdAt, capturedAt, originalImageFilename, workingImageFilename
         case identificationJson, modelConfidence, userStatus
-        case illustrationFilename, plateFilename, notes, pinned
+        case illustrationFilename, plateFilename, thumbnailFilename, notes, pinned
     }
 }
 

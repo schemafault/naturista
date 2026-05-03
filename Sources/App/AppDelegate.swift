@@ -11,6 +11,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             do {
                 try await DatabaseService.shared.initialize()
+                Task.detached(priority: .utility) {
+                    await ThumbnailBackfillService.shared.runIfNeeded()
+                }
             } catch {
                 print("Database initialization failed: \(error)")
             }

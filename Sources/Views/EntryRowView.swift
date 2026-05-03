@@ -57,11 +57,26 @@ struct EntryRowView: View {
     }
 
     // The plate composition is rendered live by SwiftUI in the detail
-    // view, so the gallery card just shows the raw illustration cropped
-    // to fill its 4:5 tile. Falls back to the working photograph (and
-    // finally a striped placeholder) while FLUX is still running.
+    // view, so the gallery card just shows a 512px thumbnail cropped to
+    // fill its tile. Falls through illustration → working → placeholder
+    // for entries that haven't been thumbnailed yet (new imports while
+    // generation is in flight, or pre-v3 rows the backfill hasn't reached).
     @ViewBuilder
     private var figure: some View {
+        if let thumb = entry.thumbnailFilename {
+            let url = AppPaths.thumbnails.appendingPathComponent(thumb)
+            if FileManager.default.fileExists(atPath: url.path) {
+                LocalImage(url: url, contentMode: .fill, fallback: { illustrationOrWorking })
+            } else {
+                illustrationOrWorking
+            }
+        } else {
+            illustrationOrWorking
+        }
+    }
+
+    @ViewBuilder
+    private var illustrationOrWorking: some View {
         if let illus = entry.illustrationFilename {
             let url = AppPaths.illustrations.appendingPathComponent(illus)
             if FileManager.default.fileExists(atPath: url.path) {
@@ -119,11 +134,7 @@ struct LocalImage<Fallback: View>: View {
         .task(id: TaskKey(url: url, token: refreshToken)) {
             image = nil
             didLoad = false
-            let target = url
-            let loaded = await Task.detached(priority: .userInitiated) { () -> NSImage? in
-                guard let data = try? Data(contentsOf: target) else { return nil }
-                return NSImage(data: data)
-            }.value
+            let loaded = await ImageCache.shared.image(for: url)
             if Task.isCancelled { return }
             image = loaded
             didLoad = true

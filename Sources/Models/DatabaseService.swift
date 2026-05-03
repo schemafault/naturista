@@ -40,6 +40,11 @@ actor DatabaseService {
                 t.add(column: "pinned", .boolean).notNull().defaults(to: false)
             }
         }
+        migrator.registerMigration("v3_thumbnails") { db in
+            try db.alter(table: "entries") { t in
+                t.add(column: "thumbnailFilename", .text)
+            }
+        }
         return migrator
     }
 
@@ -61,6 +66,26 @@ actor DatabaseService {
         guard let dbQueue else { throw DatabaseError.notInitialized }
         return try dbQueue.read { db in
             try Entry.order(Entry.Columns.createdAt.desc).fetchAll(db)
+        }
+    }
+
+    func fetchEntriesMissingThumbnail(limit: Int) throws -> [Entry] {
+        guard let dbQueue else { throw DatabaseError.notInitialized }
+        return try dbQueue.read { db in
+            try Entry
+                .filter(Entry.Columns.thumbnailFilename == nil)
+                .order(Entry.Columns.createdAt.desc)
+                .limit(limit)
+                .fetchAll(db)
+        }
+    }
+
+    func updateThumbnailFilename(id: String, thumbnailFilename: String) throws {
+        guard let dbQueue else { throw DatabaseError.notInitialized }
+        _ = try dbQueue.write { db in
+            try Entry
+                .filter(Entry.Columns.id == id)
+                .updateAll(db, Entry.Columns.thumbnailFilename.set(to: thumbnailFilename))
         }
     }
 
