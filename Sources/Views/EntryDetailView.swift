@@ -420,7 +420,7 @@ struct EntryDetailView: View {
         pipelineError = nil
         Task {
             do {
-                try await PipelineService.shared.deleteEntry(entryId: entryId)
+                try await EntryPipeline.production.delete(entryId: entryId)
                 await MainActor.run {
                     onDeleted?()
                     onBack()
@@ -440,7 +440,7 @@ struct EntryDetailView: View {
         pipelineError = nil
         Task {
             do {
-                try await PipelineService.shared.regenerateIllustration(entryId: entryId)
+                try await EntryPipeline.production.regenerate(entryId: entryId)
                 if let updated = try await DatabaseService.shared.fetchEntry(id: entry.id) {
                     await MainActor.run {
                         entry = updated
@@ -466,7 +466,7 @@ struct EntryDetailView: View {
         pipelineError = nil
         Task {
             do {
-                try await PipelineService.shared.runFullPipeline(entryId: entryId)
+                try await EntryPipeline.production.illustrate(entryId: entryId)
             } catch {
                 await MainActor.run { pipelineError = error.localizedDescription }
             }

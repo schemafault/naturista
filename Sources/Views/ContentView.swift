@@ -78,7 +78,7 @@ struct ContentView: View {
         guard let entryId = UUID(uuidString: entry.id) else { return }
         Task {
             do {
-                try await PipelineService.shared.regenerateIllustration(entryId: entryId)
+                try await EntryPipeline.production.regenerate(entryId: entryId)
                 await MainActor.run { libraryReloadToken = UUID() }
             } catch {
                 await MainActor.run { pipelineError = error.localizedDescription }
@@ -91,7 +91,7 @@ struct ContentView: View {
         pendingDelete = nil
         Task {
             do {
-                try await PipelineService.shared.deleteEntry(entryId: entryId)
+                try await EntryPipeline.production.delete(entryId: entryId)
                 await MainActor.run { libraryReloadToken = UUID() }
             } catch {
                 await MainActor.run { pipelineError = error.localizedDescription }

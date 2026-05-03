@@ -228,7 +228,7 @@ struct ImportFlowView: View {
 
         Task {
             do {
-                let entry = try await PhotoImportService.shared.importPhoto(from: url)
+                let entry = try await EntryPipeline.production.importPhoto(at: url)
                 await MainActor.run { self.entry = entry }
 
                 switch entry.identification.status {
@@ -263,7 +263,7 @@ struct ImportFlowView: View {
         pipelineError = nil
         Task {
             do {
-                try await PipelineService.shared.runIllustration(entryId: entryId)
+                try await EntryPipeline.production.illustrate(entryId: entryId)
                 await MainActor.run { onCompleted() }
             } catch {
                 await MainActor.run {
@@ -280,7 +280,7 @@ struct ImportFlowView: View {
             return
         }
         Task {
-            try? await PipelineService.shared.deleteEntry(entryId: entryId)
+            try? await EntryPipeline.production.delete(entryId: entryId)
             await MainActor.run { onCancel() }
         }
     }
