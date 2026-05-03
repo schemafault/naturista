@@ -79,7 +79,7 @@ struct ImportFlowView: View {
             Text("Add a specimen")
                 .font(DS.serif(26, weight: .regular))
                 .foregroundColor(DS.ink)
-            Text("A clear photograph with whole plant, leaves, and any flowers in frame yields the strongest identification.")
+            Text("A clear, well-lit photograph of a single subject — plant, animal, or fungus — yields the strongest identification.")
                 .font(DS.sans(13))
                 .lineSpacing(3)
                 .foregroundColor(DS.inkSoft)
@@ -91,9 +91,9 @@ struct ImportFlowView: View {
                 .padding(.top, 24)
 
             HStack(alignment: .top, spacing: 32) {
-                hintColumn(numeral: "I", title: "Whole plant in frame", text: "Include leaves, stem, and inflorescence where present.")
+                hintColumn(numeral: "I", title: "Subject fills the frame", text: "Capture the whole organism with diagnostic features visible.")
                 hintColumn(numeral: "II", title: "Even natural light", text: "Avoid harsh shadows and underexposure.")
-                hintColumn(numeral: "III", title: "One specimen at a time", text: "A single subject yields the cleanest plate.")
+                hintColumn(numeral: "III", title: "One subject at a time", text: "A single specimen yields the cleanest plate.")
             }
             .padding(.top, 28)
         }
@@ -122,7 +122,7 @@ struct ImportFlowView: View {
                 Text("Reading the photograph")
                     .font(DS.serif(26))
                     .foregroundColor(DS.ink)
-                Text("The local model is examining leaves, inflorescence, and growth habit. This typically takes between 20 and 40 seconds.")
+                Text("The local model is examining the photograph for diagnostic features. This typically takes between 20 and 40 seconds.")
                     .font(DS.sans(13))
                     .lineSpacing(3)
                     .foregroundColor(DS.inkSoft)

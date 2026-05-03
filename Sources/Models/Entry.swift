@@ -13,13 +13,14 @@ struct Entry: Codable, FetchableRecord, PersistableRecord, Identifiable {
     var illustrationFilename: String? = nil
     var plateFilename: String? = nil
     var notes: String = ""
+    var pinned: Bool = false
 
     static let databaseTableName = "entries"
 
     enum Columns: String, ColumnExpression {
         case id, createdAt, capturedAt, originalImageFilename, workingImageFilename
         case identificationJson, modelConfidence, userStatus
-        case illustrationFilename, plateFilename, notes
+        case illustrationFilename, plateFilename, notes, pinned
     }
 }
 

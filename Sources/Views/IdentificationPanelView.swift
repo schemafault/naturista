@@ -17,12 +17,14 @@ struct IdentificationPanelView: View {
                     .foregroundColor(DS.inkSoft)
 
                 HStack(spacing: 8) {
-                    Text(result.topCandidate.family)
-                        .font(DS.serif(13, italic: true))
-                        .foregroundColor(DS.mutedDeep)
-                    Text("·")
-                        .font(DS.sans(11))
-                        .foregroundColor(DS.muted)
+                    if !result.topCandidate.family.isEmpty {
+                        Text(result.topCandidate.family)
+                            .font(DS.serif(13, italic: true))
+                            .foregroundColor(DS.mutedDeep)
+                        Text("·")
+                            .font(DS.sans(11))
+                            .foregroundColor(DS.muted)
+                    }
                     HStack(spacing: 5) {
                         ConfidenceDot(level: result.modelConfidence)
                         Text("\(result.modelConfidence.lowercased()) certainty")
@@ -37,7 +39,7 @@ struct IdentificationPanelView: View {
 
             if !result.visibleEvidence.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
-                    Eyebrow(text: "Visible characters")
+                    Eyebrow(text: Kingdom.parse(result.kingdom).visibleEvidenceLabel)
                     FlowingTags(tags: result.visibleEvidence)
                 }
             }

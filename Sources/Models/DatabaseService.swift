@@ -35,6 +35,11 @@ actor DatabaseService {
                 t.column("notes", .text).notNull().defaults(to: "")
             }
         }
+        migrator.registerMigration("v2_pinned") { db in
+            try db.alter(table: "entries") { t in
+                t.add(column: "pinned", .boolean).notNull().defaults(to: false)
+            }
+        }
         return migrator
     }
 
@@ -70,6 +75,17 @@ actor DatabaseService {
         guard let dbQueue else { throw DatabaseError.notInitialized }
         _ = try dbQueue.write { db in
             try Entry.deleteOne(db, key: id)
+        }
+    }
+
+    @discardableResult
+    func setPinned(id: String, pinned: Bool) throws -> Entry? {
+        guard let dbQueue else { throw DatabaseError.notInitialized }
+        return try dbQueue.write { db in
+            guard var entry = try Entry.fetchOne(db, key: id) else { return nil }
+            entry.pinned = pinned
+            try entry.update(db)
+            return entry
         }
     }
 }

@@ -80,6 +80,15 @@ struct EntryDetailView: View {
             Spacer()
 
             HStack(spacing: 10) {
+                Button(action: togglePin) {
+                    HStack(spacing: 6) {
+                        Image(systemName: entry.pinned ? "pin.fill" : "pin")
+                            .font(.system(size: 11, weight: .regular))
+                            .rotationEffect(.degrees(45))
+                        Text(entry.pinned ? "Pinned" : "Pin")
+                    }
+                }
+                .buttonStyle(QuietButtonStyle())
                 Button("Notes") { showNotes = true }
                     .buttonStyle(QuietButtonStyle())
                 Button(action: exportPlate) {
@@ -378,6 +387,29 @@ struct EntryDetailView: View {
                 await MainActor.run { onUpdated?(snapshot) }
             } catch {
                 await MainActor.run { pipelineError = error.localizedDescription }
+            }
+        }
+    }
+
+    private func togglePin() {
+        let target = !entry.pinned
+        let id = entry.id
+        // Optimistic local flip; reconcile from DB on response.
+        entry.pinned = target
+        Task {
+            do {
+                let updated = try await DatabaseService.shared.setPinned(id: id, pinned: target)
+                if let updated {
+                    await MainActor.run {
+                        entry = updated
+                        onUpdated?(updated)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    entry.pinned = !target
+                    pipelineError = error.localizedDescription
+                }
             }
         }
     }

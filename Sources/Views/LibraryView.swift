@@ -6,19 +6,34 @@ struct LibraryView: View {
     let reloadToken: UUID
     let onOpen: (Entry) -> Void
     let onImport: () -> Void
+    var onRequestRegenerate: ((Entry) -> Void)? = nil
+    var onRequestDelete: ((Entry) -> Void)? = nil
+
+    enum CollectionFilter: Equatable { case all, recent, pinned }
 
     @State private var entries: [Entry] = []
     @State private var isLoading = false
     @State private var query = ""
     @State private var page = 0
     @State private var activeFamily: String? = nil
+    @State private var activeFilter: CollectionFilter = .all
     @State private var showIllustrationStyle = false
+
+    // Recent = the 12 most-recently created entries.
+    private var recentIds: Set<String> {
+        Set(entries.prefix(12).map { $0.id })
+    }
 
     private var filtered: [Entry] {
         entries.filter { e in
             let id = e.identification
             let family = id.family ?? ""
             if let fam = activeFamily, family != fam { return false }
+            switch activeFilter {
+            case .all: break
+            case .recent: if !recentIds.contains(e.id) { return false }
+            case .pinned: if !e.pinned { return false }
+            }
             if query.isEmpty { return true }
             let q = query.lowercased()
             let common = id.commonName ?? ""
@@ -70,48 +85,75 @@ struct LibraryView: View {
         .onChange(of: reloadToken) { _, _ in reload() }
         .onChange(of: query) { _, _ in page = 0 }
         .onChange(of: activeFamily) { _, _ in page = 0 }
+        .onChange(of: activeFilter) { _, _ in page = 0 }
     }
 
     // MARK: - Sidebar
 
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 28) {
+        VStack(alignment: .leading, spacing: 0) {
             WordmarkLogo()
                 .padding(.horizontal, 14)
                 .padding(.top, 4)
+                .padding(.bottom, 28)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Eyebrow(text: "Collection")
-                    .padding(.horizontal, 14)
-                VStack(alignment: .leading, spacing: 1) {
-                    sidebarRow(title: "All entries", count: entries.count, isActive: activeFamily == nil) {
-                        activeFamily = nil
-                    }
-                    sidebarRow(title: "Recent", count: min(12, entries.count), isActive: false) {}
-                    sidebarRow(title: "Pinned", count: 0, isActive: false, dim: true) {}
-                }
-            }
-
-            if !familyCounts.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Eyebrow(text: "Family")
-                        .padding(.horizontal, 14)
-                    VStack(alignment: .leading, spacing: 1) {
-                        ForEach(familyCounts.prefix(8), id: \.0) { fam, count in
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 28) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Eyebrow(text: "Collection")
+                            .padding(.horizontal, 14)
+                        VStack(alignment: .leading, spacing: 1) {
                             sidebarRow(
-                                title: fam,
-                                count: count,
-                                isActive: activeFamily == fam,
-                                italic: true
+                                title: "All entries",
+                                count: entries.count,
+                                isActive: activeFilter == .all && activeFamily == nil
                             ) {
-                                activeFamily = (activeFamily == fam) ? nil : fam
+                                activeFilter = .all
+                                activeFamily = nil
+                            }
+                            sidebarRow(
+                                title: "Recent",
+                                count: min(12, entries.count),
+                                isActive: activeFilter == .recent
+                            ) {
+                                activeFilter = (activeFilter == .recent) ? .all : .recent
+                                activeFamily = nil
+                            }
+                            let pinnedCount = entries.filter { $0.pinned }.count
+                            sidebarRow(
+                                title: "Pinned",
+                                count: pinnedCount,
+                                isActive: activeFilter == .pinned,
+                                dim: pinnedCount == 0 && activeFilter != .pinned
+                            ) {
+                                guard pinnedCount > 0 else { return }
+                                activeFilter = (activeFilter == .pinned) ? .all : .pinned
+                                activeFamily = nil
+                            }
+                        }
+                    }
+
+                    if !familyCounts.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Eyebrow(text: "Family")
+                                .padding(.horizontal, 14)
+                            VStack(alignment: .leading, spacing: 1) {
+                                ForEach(familyCounts, id: \.0) { fam, count in
+                                    sidebarRow(
+                                        title: fam,
+                                        count: count,
+                                        isActive: activeFamily == fam,
+                                        italic: true
+                                    ) {
+                                        activeFamily = (activeFamily == fam) ? nil : fam
+                                    }
+                                }
                             }
                         }
                     }
                 }
+                .padding(.bottom, 28)
             }
-
-            Spacer(minLength: 0)
 
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -126,7 +168,11 @@ struct LibraryView: View {
                     .buttonStyle(QuietButtonStyle())
             }
             .padding(.horizontal, 14)
+            .padding(.top, 14)
             .padding(.bottom, 4)
+            .overlay(alignment: .top) {
+                Hairline(color: DS.hairlineSoft).frame(height: 1)
+            }
         }
         .padding(.vertical, 32)
         .padding(.leading, 14)
@@ -179,12 +225,30 @@ struct LibraryView: View {
         }
     }
 
+    private var toolbarEyebrow: String {
+        if let fam = activeFamily { return "Family · \(fam)" }
+        switch activeFilter {
+        case .recent: return "Collection · Recent"
+        case .pinned: return "Collection · Pinned"
+        case .all:    return "Library"
+        }
+    }
+
+    private var toolbarTitle: String {
+        if let fam = activeFamily { return fam }
+        switch activeFilter {
+        case .recent: return "Recent"
+        case .pinned: return "Pinned"
+        case .all:    return "Field journal"
+        }
+    }
+
     private var toolbar: some View {
         VStack(spacing: 0) {
             HStack(alignment: .bottom, spacing: 32) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Eyebrow(text: activeFamily.map { "Family · \($0)" } ?? "Library")
-                    Text(activeFamily ?? "Field journal")
+                    Eyebrow(text: toolbarEyebrow)
+                    Text(toolbarTitle)
                         .font(DS.serif(38, weight: .regular))
                         .foregroundColor(DS.ink)
                         .kerning(-0.4)
@@ -244,7 +308,10 @@ struct LibraryView: View {
                             entries: visibleEntries,
                             columnCount: cols,
                             spacing: 28,
-                            onOpen: onOpen
+                            onOpen: onOpen,
+                            onRegenerate: { entry in onRequestRegenerate?(entry) },
+                            onDelete: { entry in onRequestDelete?(entry) },
+                            onTogglePin: { entry in togglePin(entry) }
                         )
                         if totalPages > 1 {
                             PaginationBar(page: page, total: totalPages) { page = $0 }
@@ -313,12 +380,31 @@ struct LibraryView: View {
                     if let fam = activeFamily, !fetched.contains(where: { $0.identification.family == fam }) {
                         activeFamily = nil
                     }
+                    if activeFilter == .pinned, !fetched.contains(where: { $0.pinned }) {
+                        activeFilter = .all
+                    }
                     if page >= totalPages { page = 0 }
                     isLoading = false
                     updateWindowTitle()
                 }
             } catch {
                 await MainActor.run { isLoading = false }
+            }
+        }
+    }
+
+    private func togglePin(_ entry: Entry) {
+        let target = !entry.pinned
+        Task {
+            do {
+                let updated = try await DatabaseService.shared.setPinned(id: entry.id, pinned: target)
+                await MainActor.run {
+                    if let updated, let idx = entries.firstIndex(where: { $0.id == updated.id }) {
+                        entries[idx] = updated
+                    }
+                }
+            } catch {
+                // Surface silently — pin is best-effort.
             }
         }
     }
@@ -363,6 +449,9 @@ private struct MasonryGrid: View {
     let columnCount: Int
     let spacing: CGFloat
     let onOpen: (Entry) -> Void
+    var onRegenerate: ((Entry) -> Void)? = nil
+    var onDelete: ((Entry) -> Void)? = nil
+    var onTogglePin: ((Entry) -> Void)? = nil
 
     var body: some View {
         let buckets = distribute(entries: entries, into: columnCount)
@@ -372,6 +461,12 @@ private struct MasonryGrid: View {
                     ForEach(buckets[i]) { entry in
                         EntryRowView(entry: entry, aspectRatio: PlateRatio.ratio(for: entry.id))
                             .onTapGesture { onOpen(entry) }
+                            .modifier(EntryContextMenuModifier(
+                                entry: entry,
+                                onRegenerate: { onRegenerate?($0) },
+                                onDelete: { onDelete?($0) },
+                                onTogglePin: { onTogglePin?($0) }
+                            ))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .top)
@@ -450,5 +545,145 @@ private struct PaginationBar: View {
         .buttonStyle(.plain)
         .disabled(disabled)
         .opacity(disabled ? 0.3 : 1)
+    }
+}
+
+// MARK: - Right-click menu
+
+// Catches right-clicks on the host SwiftUI view and reports them so the
+// caller can present a custom popover. AppKit's NSMenu won't take SwiftUI
+// styling, so we render the menu as a SwiftUI popover instead.
+private struct RightClickCatcher: NSViewRepresentable {
+    var onRightClick: () -> Void
+
+    func makeNSView(context: Context) -> CatcherView {
+        let v = CatcherView()
+        v.handler = onRightClick
+        return v
+    }
+
+    func updateNSView(_ nsView: CatcherView, context: Context) {
+        nsView.handler = onRightClick
+    }
+
+    final class CatcherView: NSView {
+        var handler: (() -> Void)?
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            // Only intercept right-clicks; let normal taps fall through to
+            // SwiftUI underneath.
+            guard let event = NSApp.currentEvent else { return nil }
+            switch event.type {
+            case .rightMouseDown, .rightMouseUp:
+                return self
+            default:
+                return nil
+            }
+        }
+        override func rightMouseDown(with event: NSEvent) {
+            handler?()
+        }
+    }
+}
+
+private struct EntryContextMenuModifier: ViewModifier {
+    let entry: Entry
+    var onRegenerate: (Entry) -> Void
+    var onDelete: (Entry) -> Void
+    var onTogglePin: (Entry) -> Void
+
+    @State private var presented = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                RightClickCatcher { presented = true }
+                    .allowsHitTesting(true)
+            )
+            .popover(isPresented: $presented, arrowEdge: .top) {
+                EntryContextMenuView(
+                    entry: entry,
+                    onRegenerate: { presented = false; onRegenerate(entry) },
+                    onDelete: { presented = false; onDelete(entry) },
+                    onTogglePin: { presented = false; onTogglePin(entry) }
+                )
+            }
+    }
+}
+
+private struct EntryContextMenuView: View {
+    let entry: Entry
+    var onRegenerate: () -> Void
+    var onDelete: () -> Void
+    var onTogglePin: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Eyebrow(text: "Plate")
+                .padding(.horizontal, 14)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+
+            menuRow(
+                title: entry.pinned ? "Unpin from collection" : "Pin to collection",
+                action: onTogglePin
+            )
+            menuRow(
+                title: "Regenerate illustration",
+                disabled: entry.identification.result == nil,
+                action: onRegenerate
+            )
+            Hairline(color: DS.hairlineSoft).padding(.vertical, 4)
+            menuRow(
+                title: "Delete entry",
+                destructive: true,
+                action: onDelete
+            )
+        }
+        .frame(width: 220)
+        .padding(.bottom, 6)
+        .background(DS.paper)
+    }
+
+    @ViewBuilder
+    private func menuRow(
+        title: String,
+        destructive: Bool = false,
+        disabled: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        MenuRow(title: title, destructive: destructive, disabled: disabled, action: action)
+    }
+}
+
+private struct MenuRow: View {
+    let title: String
+    var destructive: Bool = false
+    var disabled: Bool = false
+    var action: () -> Void
+
+    @State private var hovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Text(title)
+                    .font(DS.sans(12.5))
+                    .foregroundColor(textColor)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(hovered && !disabled ? DS.paperDeep : Color.clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.4 : 1)
+        .onHover { hovered = $0 }
+    }
+
+    private var textColor: Color {
+        if disabled { return DS.muted }
+        return destructive ? DS.rust : DS.ink
     }
 }
