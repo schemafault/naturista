@@ -12,6 +12,12 @@ struct IdentificationResult: Codable, Equatable, Sendable {
     var visibleEvidence: [String]
     var missingEvidence: [String]
     var safetyNote: String
+    // Photo-derived hints fed into the FLUX prompt as {pose}, {colors},
+    // {setting} placeholders. Default to empty for legacy entries (the
+    // illustration template falls back to a per-kingdom phrase).
+    var poseDescription: String
+    var colorPalette: String
+    var settingDescription: String
     var error: String?
 
     enum CodingKeys: String, CodingKey {
@@ -22,6 +28,9 @@ struct IdentificationResult: Codable, Equatable, Sendable {
         case visibleEvidence = "visible_evidence"
         case missingEvidence = "missing_evidence"
         case safetyNote = "safety_note"
+        case poseDescription = "pose_description"
+        case colorPalette = "color_palette"
+        case settingDescription = "setting_description"
         case error
     }
 
@@ -34,6 +43,9 @@ struct IdentificationResult: Codable, Equatable, Sendable {
         self.visibleEvidence = (try c.decodeIfPresent([String].self, forKey: .visibleEvidence)) ?? []
         self.missingEvidence = (try c.decodeIfPresent([String].self, forKey: .missingEvidence)) ?? []
         self.safetyNote = (try c.decodeIfPresent(String.self, forKey: .safetyNote)) ?? ""
+        self.poseDescription = (try c.decodeIfPresent(String.self, forKey: .poseDescription)) ?? ""
+        self.colorPalette = (try c.decodeIfPresent(String.self, forKey: .colorPalette)) ?? ""
+        self.settingDescription = (try c.decodeIfPresent(String.self, forKey: .settingDescription)) ?? ""
         self.error = try c.decodeIfPresent(String.self, forKey: .error)
     }
 }

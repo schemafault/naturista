@@ -123,7 +123,10 @@ actor GemmaActor {
           ],
           "visible_evidence": ["string"],
           "missing_evidence": ["string"],
-          "safety_note": "string"
+          "safety_note": "string",
+          "pose_description": "string",
+          "color_palette": "string",
+          "setting_description": "string"
         }
 
         Rules for "kingdom":
@@ -135,6 +138,13 @@ actor GemmaActor {
         Populate visible_evidence with the diagnostic features visible in the image — leaf shape and venation for plants; plumage, pelage, or distinctive markings for animals; cap shape and gill arrangement for fungi; salient details for "other" subjects.
 
         Tailor safety_note to the kingdom: warn against consumption for plants and fungi; warn against approaching or handling wildlife for animals; for "other" use a brief reference disclaimer.
+
+        The remaining three fields describe the photograph itself, so a downstream illustrator can match the pose, palette, and setting of THIS specific image. Be concrete and visual; one short clause each. Examples:
+        - pose_description: how the subject is arranged in frame. "perched on a moss-covered branch, head turned to the right, wings folded" / "single bloom shot from three-quarter angle, stem curving left" / "cluster of caps emerging from a fallen log, viewed from above". For "other" subjects, describe spatial arrangement and orientation.
+        - color_palette: the dominant colours and where they appear. "rust-brown body with white belly, black eye-stripe, yellow legs" / "deep magenta petals fading to white at the centre, dark green serrated leaves" / "ochre cap with cream gills, pale stem, brown spotting". For "other", describe the actual colours present.
+        - setting_description: the immediate surroundings and lighting. "oak woodland understory, dappled side-light from upper left" / "studio shot on plain white background, soft front lighting" / "rocky alpine scree at midday, hard overhead light". If the photo is a tight studio crop, say so.
+
+        These three fields should describe what is actually visible in this photograph, not what is typical for the species. If the photo is too cropped or low-quality to populate one of them, leave it as the empty string.
         """
 
     private static let userPrompt =

@@ -175,7 +175,7 @@ struct IllustrationStyleSheet: View {
 
             HStack(spacing: 8) {
                 MonoLabel(text: "VARIABLES")
-                Text("{scientific_name} · {common_name} · {subject}")
+                Text("{scientific_name} · {common_name} · {subject} · {pose} · {colors} · {setting}")
                     .font(DS.mono(10.5))
                     .foregroundColor(DS.muted)
             }
@@ -444,7 +444,7 @@ struct IllustrationStyleSheet: View {
             let unknown = IllustrationPrompts.unknownPlaceholders(in: draft)
             if !unknown.isEmpty {
                 let listed = unknown.sorted().map { "{\($0)}" }.joined(separator: ", ")
-                nextErrors[kingdom] = "Unknown variable\(unknown.count > 1 ? "s" : "") \(listed). Allowed: {scientific_name}, {common_name}, {subject}."
+                nextErrors[kingdom] = "Unknown variable\(unknown.count > 1 ? "s" : "") \(listed). Allowed: {scientific_name}, {common_name}, {subject}, {pose}, {colors}, {setting}."
             }
         }
         errors = nextErrors
