@@ -20,7 +20,6 @@
 		7176A18571C50BA96CFA2C9C /* Entry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11AFF4097CF8FA255A915845 /* Entry.swift */; };
 		75016E2CD1160953B2AFA764 /* SystemCapability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E7E03636E3189067354BDF7 /* SystemCapability.swift */; };
 		7C64DEEF0FAD89393A62A278 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B967B310FF31D71376E434A8 /* ContentView.swift */; };
-		7CF84CB498954CAE20AB98A8 /* SandboxContainerMigrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DB37F9CE5B028F024F869E6 /* SandboxContainerMigrator.swift */; };
 		8242276B42F097DCA56CE494 /* IllustrationPrompts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21D0FCAD537F5E6560D338A7 /* IllustrationPrompts.swift */; };
 		84922FADB6D9A699E156A923 /* FluxActor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57FDE4D6B25BDAE739421AAC /* FluxActor.swift */; };
 		8709B9D41CB55813EBC324F7 /* IdentificationPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD28D6D29166FDC5D5CC550D /* IdentificationPanelView.swift */; };
@@ -38,6 +37,7 @@
 		CB00DFCEB33FB67D53438D72 /* FluxTextEncoders in Frameworks */ = {isa = PBXBuildFile; productRef = FCD712FF2330F8C8B31C1AD0 /* FluxTextEncoders */; };
 		CBB45685394D073D3C045634 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = C246D12C9FA5205C0F23D23E /* MLXVLM */; };
 		DC98D1E2BD479B4C99533722 /* PhotoImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE77B46A031D569A91996054 /* PhotoImportService.swift */; };
+		E647A5090623B72D94CA819B /* Storage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D1732CFF0FBD3BFCA6F4264 /* Storage.swift */; };
 		E98CA4ACD7928D2888A0DA11 /* GemmaActor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8D144E22D796AAAF1220DB4 /* GemmaActor.swift */; };
 		EF6489D7ACF2BBEBBA3DE649 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 99387AC62F9BCC7D67D67C7B /* Info.plist */; };
 		FA7C9E798ABC95F3B4958D40 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41946F89622E52C94B9BEE70 /* main.swift */; };
@@ -63,11 +63,11 @@
 		6BB4C187F34ACDF049664D78 /* Naturista.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Naturista.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6C80FEE2509F98204617501E /* PlateCompositor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlateCompositor.swift; sourceTree = "<group>"; };
 		76EC9D72211FBCA508849D25 /* ModelLease.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelLease.swift; sourceTree = "<group>"; };
-		7DB37F9CE5B028F024F869E6 /* SandboxContainerMigrator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SandboxContainerMigrator.swift; sourceTree = "<group>"; };
 		8923C286130387CA6D6A0535 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		92F91446092340D77A9CE8D8 /* ModelConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelConfig.swift; sourceTree = "<group>"; };
 		9885A40592FC95CDEA5247B9 /* Identification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Identification.swift; sourceTree = "<group>"; };
 		99387AC62F9BCC7D67D67C7B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		9D1732CFF0FBD3BFCA6F4264 /* Storage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Storage.swift; sourceTree = "<group>"; };
 		B504B60487765D53F14212CA /* DatabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseService.swift; sourceTree = "<group>"; };
 		B967B310FF31D71376E434A8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		C8D144E22D796AAAF1220DB4 /* GemmaActor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GemmaActor.swift; sourceTree = "<group>"; };
@@ -103,6 +103,7 @@
 				0685593D984F4A6A26FCC778 /* AppDelegate.swift */,
 				41946F89622E52C94B9BEE70 /* main.swift */,
 				92F91446092340D77A9CE8D8 /* ModelConfig.swift */,
+				9D1732CFF0FBD3BFCA6F4264 /* Storage.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -138,7 +139,6 @@
 				F44BA4A03F99571A3022B990 /* ImageService.swift */,
 				EE77B46A031D569A91996054 /* PhotoImportService.swift */,
 				094559EF8E72A8C8F42F2CDB /* PipelineService.swift */,
-				7DB37F9CE5B028F024F869E6 /* SandboxContainerMigrator.swift */,
 				3E7E03636E3189067354BDF7 /* SystemCapability.swift */,
 				F119C60815B030A3E465D4DE /* ThumbnailBackfillService.swift */,
 			);
@@ -315,7 +315,7 @@
 				4A0B752B447E2F3B3EAD87DC /* PipelineService.swift in Sources */,
 				6C61578CB133CF9A594F6B2C /* PlateCompositor.swift in Sources */,
 				BE1B495B9B8A25D2C0654CEF /* PlateFrameView.swift in Sources */,
-				7CF84CB498954CAE20AB98A8 /* SandboxContainerMigrator.swift in Sources */,
+				E647A5090623B72D94CA819B /* Storage.swift in Sources */,
 				75016E2CD1160953B2AFA764 /* SystemCapability.swift in Sources */,
 				AE2B1406DF1495A32DBC7A83 /* ThumbnailBackfillService.swift in Sources */,
 				FA7C9E798ABC95F3B4958D40 /* main.swift in Sources */,

@@ -52,24 +52,13 @@ actor PipelineService {
     }
 
     func deleteEntry(entryId: UUID) async throws {
-        let entry = try await DatabaseService.shared.fetchEntry(id: entryId.uuidString)
-
-        if let entry = entry {
+        if let entry = try await DatabaseService.shared.fetchEntry(id: entryId.uuidString) {
             let fm = FileManager.default
-            let candidates: [URL] = [
-                AppPaths.originals.appendingPathComponent(entry.originalImageFilename),
-                AppPaths.working.appendingPathComponent(entry.workingImageFilename),
-                entry.illustrationFilename.map { AppPaths.illustrations.appendingPathComponent($0) },
-                entry.plateFilename.map { AppPaths.plates.appendingPathComponent($0) },
-                entry.thumbnailFilename.map { AppPaths.thumbnails.appendingPathComponent($0) },
-            ].compactMap { $0 }
-
-            for url in candidates where fm.fileExists(atPath: url.path) {
+            for url in Storage.current.files(for: entry) {
                 try? fm.removeItem(at: url)
                 ImageCache.shared.evict(url)
             }
         }
-
         try await DatabaseService.shared.deleteEntry(id: entryId.uuidString)
     }
 

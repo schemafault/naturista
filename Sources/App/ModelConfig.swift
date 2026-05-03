@@ -43,12 +43,7 @@ enum GemmaModel: String, CaseIterable, Identifiable, Sendable {
     }
 
     var localCachePath: String {
-        AppPaths.models.appendingPathComponent(directoryName, isDirectory: true).path
-    }
-
-    // Pre-migration ~/.cache location, kept only so the migrator can find it.
-    var legacyCachePath: String {
-        NSString(string: "~/.cache/\(directoryName)").expandingTildeInPath
+        Storage.current.models.appendingPathComponent(directoryName, isDirectory: true).path
     }
 
     var approxSizeGB: Double {
@@ -227,63 +222,23 @@ actor GemmaModelDownloader {
 }
 
 // MARK: - App paths
+//
+// Forwarding shim onto `Storage.current`. Existing callers that read
+// `AppPaths.thumbnails` keep working unchanged. Path resolution,
+// migrations, and the Flux2Core registry redirect all live in
+// `Storage.swift` now.
 
 enum AppPaths {
-    static var applicationSupport: URL {
-        let fm = FileManager.default
-        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let naturista = appSupport.appendingPathComponent("Naturista", isDirectory: true)
-        if !fm.fileExists(atPath: naturista.path) {
-            try? fm.createDirectory(at: naturista, withIntermediateDirectories: true)
-        }
-        return naturista
-    }
-
-    static var database: URL {
-        applicationSupport.appendingPathComponent("naturista.sqlite")
-    }
-
-    static var assets: URL {
-        applicationSupport.appendingPathComponent("assets", isDirectory: true)
-    }
-
-    static var originals: URL {
-        assets.appendingPathComponent("originals", isDirectory: true)
-    }
-
-    static var working: URL {
-        assets.appendingPathComponent("working", isDirectory: true)
-    }
-
-    static var thumbnails: URL {
-        assets.appendingPathComponent("thumbnails", isDirectory: true)
-    }
-
-    static var generated: URL {
-        applicationSupport.appendingPathComponent("generated", isDirectory: true)
-    }
-
-    static var illustrations: URL {
-        generated.appendingPathComponent("illustrations", isDirectory: true)
-    }
-
-    static var plates: URL {
-        generated.appendingPathComponent("plates", isDirectory: true)
-    }
-
-    static var models: URL {
-        applicationSupport.appendingPathComponent("models", isDirectory: true)
-    }
-
-    static func ensureDirectories() {
-        let dirs = [assets, originals, working, thumbnails, generated, illustrations, plates, models]
-        let fm = FileManager.default
-        for dir in dirs {
-            if !fm.fileExists(atPath: dir.path) {
-                try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
-            }
-        }
-    }
+    static var applicationSupport: URL { Storage.current.root }
+    static var database: URL           { Storage.current.database }
+    static var assets: URL             { Storage.current.assets }
+    static var originals: URL          { Storage.current.originals }
+    static var working: URL            { Storage.current.working }
+    static var thumbnails: URL         { Storage.current.thumbnails }
+    static var generated: URL          { Storage.current.generated }
+    static var illustrations: URL      { Storage.current.illustrations }
+    static var plates: URL             { Storage.current.plates }
+    static var models: URL             { Storage.current.models }
 }
 
 // MARK: - Hugging Face downloader
@@ -441,49 +396,3 @@ private actor DownloadCounter {
     }
 }
 
-// MARK: - Legacy ~/.cache → AppPaths.models migration
-//
-// One-shot launch migration. ~/.cache/ is purgeable by macOS, so users can
-// lose 17 GB of weights to a "Free up storage" prompt and not understand
-// why a generate call now wants to re-download. Idempotent: a successful
-// pass sets the UserDefaults flag and subsequent launches no-op. Per-model
-// failures are logged and skipped — they do not block app launch.
-enum ModelStorageMigrator {
-    private static let completedFlag = "models.migratedToAppSupport.v1"
-
-    static func migrateIfNeeded(userDefaults: UserDefaults = .standard,
-                                fileManager: FileManager = .default) {
-        if userDefaults.bool(forKey: completedFlag) { return }
-
-        // Only Gemma weights are migrated. The legacy mflux FLUX layout
-        // is gone — Flux2Core uses a different on-disk structure
-        // (black-forest-labs/...) and re-downloads on first use.
-        let pairs: [(label: String, source: URL, destination: URL)] =
-            GemmaModel.allCases.map { model in
-                (model.directoryName,
-                 URL(fileURLWithPath: model.legacyCachePath),
-                 URL(fileURLWithPath: model.localCachePath))
-            }
-
-        try? fileManager.createDirectory(at: AppPaths.models,
-                                         withIntermediateDirectories: true)
-
-        for pair in pairs {
-            guard fileManager.fileExists(atPath: pair.source.path) else { continue }
-
-            if fileManager.fileExists(atPath: pair.destination.path) {
-                print("[migrate] \(pair.label): destination already exists, skipping (\(pair.source.path))")
-                continue
-            }
-
-            do {
-                try fileManager.moveItem(at: pair.source, to: pair.destination)
-                print("[migrate] \(pair.label): moved to \(pair.destination.path)")
-            } catch {
-                print("[migrate] \(pair.label): FAILED — \(error.localizedDescription)")
-            }
-        }
-
-        userDefaults.set(true, forKey: completedFlag)
-    }
-}
