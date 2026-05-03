@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0277A87C24A099DD42B21CB2 /* Identification.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9885A40592FC95CDEA5247B9 /* Identification.swift */; };
 		1E6AF8ECE42F9B09EC24A9BA /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0685593D984F4A6A26FCC778 /* AppDelegate.swift */; };
 		269A3B37CDD653012C0050C1 /* EntryRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB9119DE66C094D14D34AFAE /* EntryRowView.swift */; };
 		308875B2A873464E6C37D236 /* EntryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F3DDF8BBC226266CE81F052 /* EntryDetailView.swift */; };
@@ -44,6 +45,7 @@
 		6C80FEE2509F98204617501E /* PlateCompositor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlateCompositor.swift; sourceTree = "<group>"; };
 		8923C286130387CA6D6A0535 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		92F91446092340D77A9CE8D8 /* ModelConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelConfig.swift; sourceTree = "<group>"; };
+		9885A40592FC95CDEA5247B9 /* Identification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Identification.swift; sourceTree = "<group>"; };
 		99387AC62F9BCC7D67D67C7B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B504B60487765D53F14212CA /* DatabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseService.swift; sourceTree = "<group>"; };
 		B967B310FF31D71376E434A8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -132,6 +134,7 @@
 			children = (
 				B504B60487765D53F14212CA /* DatabaseService.swift */,
 				11AFF4097CF8FA255A915845 /* Entry.swift */,
+				9885A40592FC95CDEA5247B9 /* Identification.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -251,6 +254,7 @@
 				269A3B37CDD653012C0050C1 /* EntryRowView.swift in Sources */,
 				84922FADB6D9A699E156A923 /* FluxActor.swift in Sources */,
 				E98CA4ACD7928D2888A0DA11 /* GemmaActor.swift in Sources */,
+				0277A87C24A099DD42B21CB2 /* Identification.swift in Sources */,
 				8709B9D41CB55813EBC324F7 /* IdentificationPanelView.swift in Sources */,
 				FBCF5ED4091050829FFB2828 /* ImageService.swift in Sources */,
 				A1C8E6C0C433315C53466E11 /* ImportFlowView.swift in Sources */,

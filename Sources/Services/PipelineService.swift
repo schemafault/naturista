@@ -55,11 +55,8 @@ actor PipelineService {
         }
         print("[regenerate] existing illustrationFilename=\(currentEntry.illustrationFilename ?? "<nil>")")
 
-        let identification: IdentificationResult
-        do {
-            identification = try JSONDecoder().decode(IdentificationResult.self, from: Data(currentEntry.identificationJson.utf8))
-        } catch {
-            throw PipelineError.gemmaFailed("Entry has no valid identification: \(error.localizedDescription)")
+        guard let identification = currentEntry.identification.result else {
+            throw PipelineError.gemmaFailed("Entry has no valid identification.")
         }
 
         let workingPath = AppPaths.working.appendingPathComponent(currentEntry.workingImageFilename).path
@@ -98,11 +95,8 @@ actor PipelineService {
 
         let workingPath = AppPaths.working.appendingPathComponent(currentEntry.workingImageFilename).path
 
-        let identification: IdentificationResult
-        do {
-            identification = try JSONDecoder().decode(IdentificationResult.self, from: Data(currentEntry.identificationJson.utf8))
-        } catch {
-            throw PipelineError.gemmaFailed("Entry has no valid identification: \(error.localizedDescription)")
+        guard let identification = currentEntry.identification.result else {
+            throw PipelineError.gemmaFailed("Entry has no valid identification.")
         }
 
         await GemmaActor.shared.shutdown()
@@ -136,8 +130,7 @@ actor PipelineService {
         let identification: IdentificationResult
         do {
             let result = try await GemmaActor.shared.identify(photoPath: workingPath)
-            currentEntry.identificationJson = String(data: try JSONEncoder().encode(result), encoding: .utf8) ?? ""
-            currentEntry.modelConfidence = result.modelConfidence
+            currentEntry.setIdentification(.success(result))
             try await DatabaseService.shared.saveEntry(currentEntry)
             identification = result
         } catch {

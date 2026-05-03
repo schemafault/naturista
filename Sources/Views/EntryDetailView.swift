@@ -164,14 +164,15 @@ struct EntryDetailView: View {
     // MARK: - Side panel
 
     private var sidePanel: some View {
-        VStack(alignment: .leading, spacing: 28) {
+        let id = entry.identification
+        return VStack(alignment: .leading, spacing: 28) {
             VStack(alignment: .leading, spacing: 4) {
                 Eyebrow(text: "Identification")
-                Text(entry.commonName)
+                Text(id.commonName ?? "Unidentified")
                     .font(DS.serif(26, weight: .regular))
                     .foregroundColor(DS.ink)
-                if !entry.scientificName.isEmpty {
-                    Text(entry.scientificName)
+                if let scientific = id.scientificName, !scientific.isEmpty {
+                    Text(scientific)
                         .font(DS.serif(15, italic: true))
                         .foregroundColor(DS.inkSoft)
                 }
@@ -180,7 +181,8 @@ struct EntryDetailView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Hairline(color: DS.hairline)
                 detailRow(label: "Family") {
-                    Text(entry.family.isEmpty ? "—" : entry.family)
+                    let family = id.family ?? ""
+                    Text(family.isEmpty ? "—" : family)
                         .font(DS.serif(13, italic: true))
                         .foregroundColor(DS.ink)
                 }
@@ -204,18 +206,18 @@ struct EntryDetailView: View {
                 }
             }
 
-            if !visibleEvidence.isEmpty {
+            if !id.visibleEvidence.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
-                    Eyebrow(text: entry.kingdom.visibleEvidenceLabel)
-                    FlowingTags(tags: visibleEvidence)
+                    Eyebrow(text: id.kingdom.visibleEvidenceLabel)
+                    FlowingTags(tags: id.visibleEvidence)
                 }
             }
 
-            if !alternatives.isEmpty {
+            if !id.alternatives.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     Eyebrow(text: "Alternatives")
                     VStack(alignment: .leading, spacing: 12) {
-                        ForEach(Array(alternatives.enumerated()), id: \.offset) { _, alt in
+                        ForEach(Array(id.alternatives.enumerated()), id: \.offset) { _, alt in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(alt.commonName)
                                     .font(DS.sans(13))
@@ -272,7 +274,7 @@ struct EntryDetailView: View {
                         }
                     }
                     .buttonStyle(QuietButtonStyle())
-                    .disabled(entry.identificationJson.isEmpty || isRetrying || isRecomposing || isDeleting)
+                    .disabled(entry.identification.result == nil || isRetrying || isRecomposing || isDeleting)
                 }
                 Button(role: .destructive) { showDeleteConfirm = true } label: {
                     HStack(spacing: 6) {
@@ -344,24 +346,11 @@ struct EntryDetailView: View {
         return f.string(from: d)
     }
 
-    private struct AlternativeRow {
-        let commonName: String
-        let scientificName: String
-        let reason: String
-    }
-
-    private var visibleEvidence: [String] {
-        guard let data = entry.identificationJson.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let evidence = json["visible_evidence"] as? [String] else { return [] }
-        return evidence
-    }
-
     // Kingdom-specific safety boilerplate for the panel footer. The fungus
     // case bolds "Never eat" — mushroom misidentification has lethal stakes
     // and a polite hedge would undersell that.
     private var safetyFooter: Text {
-        switch entry.kingdom {
+        switch entry.identification.kingdom {
         case .plant:
             return Text("Identification produced locally. Treat as a reference — verify with a field guide before consumption or handling.")
         case .animal:
@@ -375,23 +364,10 @@ struct EntryDetailView: View {
         }
     }
 
-    private var alternatives: [AlternativeRow] {
-        guard let data = entry.identificationJson.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let alts = json["alternatives"] as? [[String: Any]] else { return [] }
-        return alts.map { row in
-            AlternativeRow(
-                commonName: row["common_name"] as? String ?? "",
-                scientificName: row["scientific_name"] as? String ?? "",
-                reason: row["reason"] as? String ?? ""
-            )
-        }
-    }
-
     // MARK: - Side effects
 
     private func updateWindowTitle() {
-        NSApp.windows.first?.title = "Naturista — \(entry.commonName)"
+        NSApp.windows.first?.title = "Naturista — \(entry.identification.commonName ?? "Entry")"
     }
 
     private func persistEntry() {
@@ -481,7 +457,7 @@ struct EntryDetailView: View {
         let panel = NSSavePanel()
         panel.title = "Export Plate"
         panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = "\(entry.commonName)-plate.png"
+        panel.nameFieldStringValue = "\(entry.identification.commonName ?? "plate")-plate.png"
         panel.canCreateDirectories = true
 
         guard panel.runModal() == .OK, let destination = panel.url else {
@@ -564,7 +540,7 @@ private struct NotesEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Eyebrow(text: "Notes")
-            Text(entry.commonName)
+            Text(entry.identification.commonName ?? "Notes")
                 .font(DS.serif(22))
                 .foregroundColor(DS.ink)
 

@@ -45,7 +45,7 @@ env/
 ENV/
 
 # ML model weights (large, fetched/downloaded locally)
-models/
+/models/
 *.safetensors
 *.gguf
 *.bin

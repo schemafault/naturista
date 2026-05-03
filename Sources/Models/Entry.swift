@@ -23,6 +23,17 @@ struct Entry: Codable, FetchableRecord, PersistableRecord, Identifiable {
     }
 }
 
+extension Entry {
+    var identification: Identification {
+        Identification.parse(identificationJson)
+    }
+
+    mutating func setIdentification(_ id: Identification) {
+        identificationJson = id.encodedJSON()
+        modelConfidence = id.modelConfidence
+    }
+}
+
 // Pre-kingdom-aware entries (all plants) have no `kingdom` key in their
 // identificationJson. `parse(_:)` defaults to .plant so legacy rows render
 // correctly with no migration.

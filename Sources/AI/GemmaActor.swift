@@ -26,7 +26,7 @@ enum GemmaError: Error, LocalizedError {
     }
 }
 
-struct IdentificationResult: Codable {
+struct IdentificationResult: Codable, Equatable {
     var kingdom: String
     var modelConfidence: String
     var topCandidate: TopCandidate
@@ -51,7 +51,9 @@ struct IdentificationResult: Codable {
     // so existing entries decode without migration.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.kingdom = (try c.decodeIfPresent(String.self, forKey: .kingdom)) ?? "plant"
+        // Default + normalisation lives in Kingdom.parse (legacy rows have no
+        // `kingdom` key; some payloads arrive title-cased).
+        self.kingdom = Kingdom.parse(try c.decodeIfPresent(String.self, forKey: .kingdom)).rawValue
         self.modelConfidence = try c.decode(String.self, forKey: .modelConfidence)
         self.topCandidate = try c.decode(TopCandidate.self, forKey: .topCandidate)
         self.alternatives = (try c.decodeIfPresent([Alternative].self, forKey: .alternatives)) ?? []
@@ -62,7 +64,7 @@ struct IdentificationResult: Codable {
     }
 }
 
-struct TopCandidate: Codable {
+struct TopCandidate: Codable, Equatable {
     var commonName: String
     var scientificName: String
     var family: String
@@ -74,7 +76,7 @@ struct TopCandidate: Codable {
     }
 }
 
-struct Alternative: Codable {
+struct Alternative: Codable, Equatable {
     var commonName: String
     var scientificName: String
     var reason: String

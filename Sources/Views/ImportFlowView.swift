@@ -231,21 +231,18 @@ struct ImportFlowView: View {
                 let entry = try await PhotoImportService.shared.importPhoto(from: url)
                 await MainActor.run { self.entry = entry }
 
-                let decoder = JSONDecoder()
-                if let data = entry.identificationJson.data(using: .utf8),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let _ = json["error"] {
-                    await MainActor.run {
-                        identificationError = json["error"] as? String ?? "Identification failed."
-                        stage = .identified
-                    }
-                } else if !entry.identificationJson.isEmpty {
-                    let result = try decoder.decode(IdentificationResult.self, from: Data(entry.identificationJson.utf8))
+                switch entry.identification.status {
+                case .ready(let result):
                     await MainActor.run {
                         identification = result
                         stage = .identified
                     }
-                } else {
+                case .failed(let message):
+                    await MainActor.run {
+                        identificationError = message
+                        stage = .identified
+                    }
+                case .pending:
                     await MainActor.run {
                         identificationError = "The model returned no identification."
                         stage = .identified

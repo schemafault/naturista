@@ -7,6 +7,7 @@ struct EntryRowView: View {
     @State private var hovered = false
 
     var body: some View {
+        let id = entry.identification
         VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .topLeading) {
                 Rectangle()
@@ -27,20 +28,20 @@ struct EntryRowView: View {
                     Rectangle()
                         .fill(DS.hairline)
                         .frame(width: 1, height: 9)
-                    MonoLabel(text: entry.kingdom.displayLabel, color: DS.muted)
+                    MonoLabel(text: id.kingdom.displayLabel, color: DS.muted)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.commonName)
+                Text(id.commonName ?? "Unidentified")
                     .font(DS.serif(17, weight: .regular))
                     .foregroundColor(DS.ink)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-                if !entry.scientificName.isEmpty {
-                    Text(entry.scientificName)
+                if let scientific = id.scientificName, !scientific.isEmpty {
+                    Text(scientific)
                         .font(DS.serif(13, italic: true))
                         .foregroundColor(DS.mutedDeep)
                         .lineLimit(1)
@@ -76,10 +77,11 @@ struct EntryRowView: View {
     @ViewBuilder
     private var workingOrPlaceholder: some View {
         let workingURL = AppPaths.working.appendingPathComponent(entry.workingImageFilename)
+        let label = entry.identification.commonName ?? "Unidentified"
         if FileManager.default.fileExists(atPath: workingURL.path) {
-            LocalImage(url: workingURL, contentMode: .fill, fallback: { PlatePlaceholder(label: entry.commonName) })
+            LocalImage(url: workingURL, contentMode: .fill, fallback: { PlatePlaceholder(label: label) })
         } else {
-            PlatePlaceholder(label: entry.commonName)
+            PlatePlaceholder(label: label)
         }
     }
 
@@ -134,42 +136,3 @@ struct LocalImage<Fallback: View>: View {
     }
 }
 
-extension Entry {
-    var commonName: String {
-        guard let data = self.identificationJson.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let topCandidate = json["top_candidate"] as? [String: Any],
-              let name = topCandidate["common_name"] as? String else {
-            return "Unidentified"
-        }
-        return name
-    }
-
-    var scientificName: String {
-        guard let data = self.identificationJson.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let topCandidate = json["top_candidate"] as? [String: Any],
-              let name = topCandidate["scientific_name"] as? String else {
-            return ""
-        }
-        return name
-    }
-
-    var family: String {
-        guard let data = self.identificationJson.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let topCandidate = json["top_candidate"] as? [String: Any],
-              let fam = topCandidate["family"] as? String else {
-            return ""
-        }
-        return fam
-    }
-
-    var kingdom: Kingdom {
-        guard let data = self.identificationJson.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return .plant
-        }
-        return Kingdom.parse(json["kingdom"] as? String)
-    }
-}
