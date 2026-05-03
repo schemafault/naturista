@@ -12,6 +12,7 @@ struct LibraryView: View {
     @State private var query = ""
     @State private var page = 0
     @State private var activeFamily: String? = nil
+    @State private var showIllustrationStyle = false
 
     private var filtered: [Entry] {
         entries.filter { e in
@@ -112,13 +113,17 @@ struct LibraryView: View {
 
             Spacer(minLength: 0)
 
-            VStack(alignment: .leading, spacing: 4) {
-                MonoLabel(text: "v0.1 · LOCAL")
-                Text("All identifications run on this device.")
-                    .font(DS.sans(11))
-                    .tracking(0.4)
-                    .foregroundColor(DS.muted)
-                    .lineLimit(2)
+            VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MonoLabel(text: "v0.1 · LOCAL")
+                    Text("All identifications run on this device.")
+                        .font(DS.sans(11))
+                        .tracking(0.4)
+                        .foregroundColor(DS.muted)
+                        .lineLimit(2)
+                }
+                Button("Illustration style") { showIllustrationStyle = true }
+                    .buttonStyle(QuietButtonStyle())
             }
             .padding(.horizontal, 14)
             .padding(.bottom, 4)
@@ -126,6 +131,9 @@ struct LibraryView: View {
         .padding(.vertical, 32)
         .padding(.leading, 14)
         .padding(.trailing, 4)
+        .sheet(isPresented: $showIllustrationStyle) {
+            IllustrationStyleSheet()
+        }
     }
 
     private func sidebarRow(

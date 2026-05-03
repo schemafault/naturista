@@ -59,12 +59,9 @@ actor PipelineService {
             throw PipelineError.gemmaFailed("Entry has no valid identification.")
         }
 
-        let workingPath = AppPaths.working.appendingPathComponent(currentEntry.workingImageFilename).path
-
         do {
             let illustrationPath = try await ModelLease.shared.withExclusive(.illustration) {
                 try await FluxActor.shared.generate(
-                    photoPath: workingPath,
                     identification: identification,
                     entryId: entryId
                 )
@@ -91,8 +88,6 @@ actor PipelineService {
             throw PipelineError.entryNotFound
         }
 
-        let workingPath = AppPaths.working.appendingPathComponent(currentEntry.workingImageFilename).path
-
         guard let identification = currentEntry.identification.result else {
             throw PipelineError.gemmaFailed("Entry has no valid identification.")
         }
@@ -100,7 +95,6 @@ actor PipelineService {
         do {
             let illustrationPath = try await ModelLease.shared.withExclusive(.illustration) {
                 try await FluxActor.shared.generate(
-                    photoPath: workingPath,
                     identification: identification,
                     entryId: entryId
                 )
@@ -141,7 +135,6 @@ actor PipelineService {
         do {
             let illustrationPath = try await ModelLease.shared.withExclusive(.illustration) {
                 try await FluxActor.shared.generate(
-                    photoPath: workingPath,
                     identification: identification,
                     entryId: entryId
                 )

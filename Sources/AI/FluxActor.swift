@@ -36,18 +36,18 @@ actor FluxActor {
 
     private struct GenerateRequest: Encodable, Sendable {
         let action: String
-        let identification_json_path: String
-        let photo_path: String
+        let prompt: String
         let output_path: String
     }
 
-    func generate(photoPath: String, identification: IdentificationResult, entryId: UUID) async throws -> String {
-        // FLUX takes the identification as a sidecar JSON file rather than
-        // inline; write it once, hand the path over, clean up on exit.
-        let identificationJsonPath = AppPaths.applicationSupport
-            .appendingPathComponent("temp_identification_\(entryId.uuidString).json")
-        try JSONEncoder().encode(identification).write(to: identificationJsonPath)
-        defer { try? FileManager.default.removeItem(at: identificationJsonPath) }
+    func generate(identification: IdentificationResult, entryId: UUID) async throws -> String {
+        // Swift owns the per-kingdom templates and the {scientific_name} /
+        // {common_name} / {subject} substitution; Python receives the fully-
+        // rendered prompt via the existing `prompt` RPC field. The template
+        // returned by the store is the user's override or the built-in default.
+        let kingdom = Kingdom.parse(identification.kingdom)
+        let template = IllustrationPromptStore.shared.template(for: kingdom)
+        let prompt = IllustrationPrompts.render(template: template, identification: identification)
 
         let illustrationFilename = "\(entryId.uuidString)_illustration.png"
         let outputPath = AppPaths.illustrations.appendingPathComponent(illustrationFilename).path
@@ -55,8 +55,7 @@ actor FluxActor {
         let result = try await transport.call(
             GenerateRequest(
                 action: "generate",
-                identification_json_path: identificationJsonPath.path,
-                photo_path: photoPath,
+                prompt: prompt,
                 output_path: outputPath
             ),
             responseType: FluxGenerationResult.self
