@@ -35,15 +35,25 @@ enum GemmaModel: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    // 31B intentionally points at the user's existing custom-named directory
-    // so we don't trigger a re-download for an already-installed model.
-    var localCachePath: String {
+    // Per-model directory name. Kept as a stable identifier so
+    // ModelStorageMigrator can find the legacy ~/.cache/<dirName> location
+    // and move it under AppPaths.models on launch.
+    var directoryName: String {
         switch self {
-        case .gemma4_31b:        return "~/.cache/gemma-4-31b-dense-4bit-mlx"
-        case .gemma3_12b:        return "~/.cache/gemma-3-12b-it-4bit"
-        case .gemma3_4b:         return "~/.cache/gemma-3-4b-it-4bit"
-        case .llama32vision_11b: return "~/.cache/Llama-3.2-11B-Vision-Instruct-4bit"
+        case .gemma4_31b:        return "gemma-4-31b-dense-4bit-mlx"
+        case .gemma3_12b:        return "gemma-3-12b-it-4bit"
+        case .gemma3_4b:         return "gemma-3-4b-it-4bit"
+        case .llama32vision_11b: return "Llama-3.2-11B-Vision-Instruct-4bit"
         }
+    }
+
+    var localCachePath: String {
+        AppPaths.models.appendingPathComponent(directoryName, isDirectory: true).path
+    }
+
+    // Pre-migration ~/.cache location, kept only so the migrator can find it.
+    var legacyCachePath: String {
+        NSString(string: "~/.cache/\(directoryName)").expandingTildeInPath
     }
 
     var approxSizeGB: Double {
@@ -304,6 +314,13 @@ enum AppPaths {
         applicationSupport.appendingPathComponent("models", isDirectory: true)
     }
 
+    // mflux 4-bit FLUX.2 Klein weights. The Python flux service reads its
+    // location from FLUX_MODEL_PATH (FluxActor injects this), so the
+    // directory name only needs to stay in sync with the migrator.
+    static var fluxModel: URL {
+        models.appendingPathComponent("flux2-klein-4b-mflux-4bit", isDirectory: true)
+    }
+
     static func ensureDirectories() {
         let dirs = [assets, originals, working, thumbnails, generated, illustrations, plates, models]
         let fm = FileManager.default
@@ -312,5 +329,54 @@ enum AppPaths {
                 try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
             }
         }
+    }
+}
+
+// MARK: - Legacy ~/.cache → AppPaths.models migration
+//
+// One-shot launch migration. ~/.cache/ is purgeable by macOS, so users can
+// lose 17 GB of weights to a "Free up storage" prompt and not understand
+// why a generate call now wants to re-download. Idempotent: a successful
+// pass sets the UserDefaults flag and subsequent launches no-op. Per-model
+// failures are logged and skipped — they do not block app launch.
+enum ModelStorageMigrator {
+    private static let completedFlag = "models.migratedToAppSupport.v1"
+
+    static func migrateIfNeeded(userDefaults: UserDefaults = .standard,
+                                fileManager: FileManager = .default) {
+        if userDefaults.bool(forKey: completedFlag) { return }
+
+        let pairs: [(label: String, source: URL, destination: URL)] =
+            GemmaModel.allCases.map { model in
+                (model.directoryName,
+                 URL(fileURLWithPath: model.legacyCachePath),
+                 URL(fileURLWithPath: model.localCachePath))
+            }
+            + [(
+                "flux2-klein-4b-mflux-4bit",
+                URL(fileURLWithPath: NSString(string: "~/.cache/flux2-klein-4b-mflux-4bit").expandingTildeInPath),
+                AppPaths.fluxModel
+            )]
+
+        try? fileManager.createDirectory(at: AppPaths.models,
+                                         withIntermediateDirectories: true)
+
+        for pair in pairs {
+            guard fileManager.fileExists(atPath: pair.source.path) else { continue }
+
+            if fileManager.fileExists(atPath: pair.destination.path) {
+                print("[migrate] \(pair.label): destination already exists, skipping (\(pair.source.path))")
+                continue
+            }
+
+            do {
+                try fileManager.moveItem(at: pair.source, to: pair.destination)
+                print("[migrate] \(pair.label): moved to \(pair.destination.path)")
+            } catch {
+                print("[migrate] \(pair.label): FAILED — \(error.localizedDescription)")
+            }
+        }
+
+        userDefaults.set(true, forKey: completedFlag)
     }
 }

@@ -27,10 +27,13 @@ actor FluxActor {
     private init() {
         self.transport = PythonProcessTransport(config: .init(
             scriptPath: FluxActor.scriptPath,
-            environment: { [:] },
+            environment: {
+                ["FLUX_MODEL_PATH": AppPaths.fluxModel.path]
+            },
             timeoutSeconds: 310,
             warmupSeconds: 2,
-            stderrLogURL: URL(fileURLWithPath: "/tmp/naturista_flux.log")
+            stderrLogURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("naturista_flux.log")
         ))
     }
 

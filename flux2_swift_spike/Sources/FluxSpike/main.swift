@@ -60,21 +60,37 @@ let loadSeconds = Date().timeIntervalSince(loadStart)
 print(String(format: "[spike] models loaded in %.1fs", loadSeconds))
 print(String(format: "[spike] peak RSS after load: %.2f GB", peakRSSGB()))
 
-let genStart = Date()
-let image = try await pipeline.generateTextToImage(
+// Warmup (also loads text encoder, which loadModels defers).
+print("[spike] warmup generation (loads text encoder)...")
+let warmStart = Date()
+let warmImage = try await pipeline.generateTextToImage(
     prompt: prompt,
-    height: height,
-    width: width,
-    steps: steps,
-    guidance: guidance,
-    seed: seed
+    height: height, width: width, steps: steps, guidance: guidance, seed: seed
 )
-let genSeconds = Date().timeIntervalSince(genStart)
+let warmSeconds = Date().timeIntervalSince(warmStart)
+print(String(format: "[spike] warmup: %.2fs", warmSeconds))
+try savePNG(warmImage, to: outputURL)
 
-try savePNG(image, to: outputURL)
+// Steady-state: 3 generations.
+var times: [Double] = []
+for i in 0..<3 {
+    let t0 = Date()
+    _ = try await pipeline.generateTextToImage(
+        prompt: prompt,
+        height: height, width: width, steps: steps, guidance: guidance,
+        seed: seed &+ UInt64(i + 1)
+    )
+    let dt = Date().timeIntervalSince(t0)
+    times.append(dt)
+    print(String(format: "[spike] gen %d: %.2fs", i + 1, dt))
+}
+
+let median = times.sorted()[times.count / 2]
+let best = times.min()!
 
 print("---- spike result ----")
-print(String(format: "load_seconds:    %.2f", loadSeconds))
-print(String(format: "generate_seconds:%.2f", genSeconds))
-print(String(format: "peak_rss_gb:     %.2f", peakRSSGB()))
-print("output:          \(outputURL.path)")
+print(String(format: "warmup_seconds:        %.2f", warmSeconds))
+print(String(format: "steady_best_seconds:   %.2f", best))
+print(String(format: "steady_median_seconds: %.2f", median))
+print(String(format: "peak_rss_gb:           %.2f", peakRSSGB()))
+print("output (warmup):       \(outputURL.path)")

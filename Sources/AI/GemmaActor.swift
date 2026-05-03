@@ -82,7 +82,8 @@ actor GemmaActor {
             },
             timeoutSeconds: 310,
             warmupSeconds: 2,
-            stderrLogURL: URL(fileURLWithPath: "/tmp/naturista_gemma.log")
+            stderrLogURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent("naturista_gemma.log")
         ))
     }
 

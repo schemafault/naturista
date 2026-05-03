@@ -6,6 +6,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppPaths.ensureDirectories()
+        ModelStorageMigrator.migrateIfNeeded()
         installMainMenu()
 
         Task {
