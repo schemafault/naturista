@@ -88,8 +88,18 @@ actor FluxActor {
         if let pipeline { return pipeline }
         let next = Flux2Pipeline(
             model: .klein4B,
-            // ultraMinimal = text encoder mlx4bit + transformer int4.
-            quantization: .ultraMinimal
+            // minimal = text encoder mlx4bit + transformer qint8. The
+            // transformer drives color fidelity, and on-the-fly int4
+            // (`.ultraMinimal`) introduced visible hue/desaturation
+            // shifts vs. the prior mflux pipeline (which loaded
+            // calibrated 4-bit weights). qint8 restores fidelity at
+            // ~40 GB peak (text encoder and transformer are not
+            // co-resident; +8 GB for VAE and working memory). Targets
+            // 48 GB+ Macs — smaller machines should fall back to
+            // `.ultraMinimal`. ModelLease evicts Gemma before FLUX
+            // loads so the FLUX residency budget is the full RAM minus
+            // OS overhead.
+            quantization: .minimal
         )
         try await next.loadModels()
         self.pipeline = next
