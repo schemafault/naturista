@@ -10,12 +10,14 @@
 		1E6AF8ECE42F9B09EC24A9BA /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0685593D984F4A6A26FCC778 /* AppDelegate.swift */; };
 		269A3B37CDD653012C0050C1 /* EntryRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB9119DE66C094D14D34AFAE /* EntryRowView.swift */; };
 		308875B2A873464E6C37D236 /* EntryDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F3DDF8BBC226266CE81F052 /* EntryDetailView.swift */; };
+		41094921254A75610859A08B /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8923C286130387CA6D6A0535 /* DesignSystem.swift */; };
 		4A0B752B447E2F3B3EAD87DC /* PipelineService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 094559EF8E72A8C8F42F2CDB /* PipelineService.swift */; };
 		6C61578CB133CF9A594F6B2C /* PlateCompositor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C80FEE2509F98204617501E /* PlateCompositor.swift */; };
 		7176A18571C50BA96CFA2C9C /* Entry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11AFF4097CF8FA255A915845 /* Entry.swift */; };
 		7C64DEEF0FAD89393A62A278 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B967B310FF31D71376E434A8 /* ContentView.swift */; };
 		84922FADB6D9A699E156A923 /* FluxActor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57FDE4D6B25BDAE739421AAC /* FluxActor.swift */; };
 		8709B9D41CB55813EBC324F7 /* IdentificationPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD28D6D29166FDC5D5CC550D /* IdentificationPanelView.swift */; };
+		A1C8E6C0C433315C53466E11 /* ImportFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 325628BEE263E4D9F645EC4E /* ImportFlowView.swift */; };
 		A42055F4F7F9120036CD716E /* DatabaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B504B60487765D53F14212CA /* DatabaseService.swift */; };
 		AE87A01E1727F7C79F9D612D /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF1161E205FD047A0C8554A2 /* LibraryView.swift */; };
 		BDDF8C4AEFDF4CDACF6B8A77 /* ModelConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92F91446092340D77A9CE8D8 /* ModelConfig.swift */; };
@@ -31,12 +33,14 @@
 		0685593D984F4A6A26FCC778 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		094559EF8E72A8C8F42F2CDB /* PipelineService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineService.swift; sourceTree = "<group>"; };
 		11AFF4097CF8FA255A915845 /* Entry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Entry.swift; sourceTree = "<group>"; };
+		325628BEE263E4D9F645EC4E /* ImportFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportFlowView.swift; sourceTree = "<group>"; };
 		3F3DDF8BBC226266CE81F052 /* EntryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryDetailView.swift; sourceTree = "<group>"; };
 		41946F89622E52C94B9BEE70 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		57FDE4D6B25BDAE739421AAC /* FluxActor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluxActor.swift; sourceTree = "<group>"; };
 		5F3849A5EFBD81B6DE796D26 /* Naturista.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Naturista.entitlements; sourceTree = "<group>"; };
 		6BB4C187F34ACDF049664D78 /* Naturista.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Naturista.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6C80FEE2509F98204617501E /* PlateCompositor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlateCompositor.swift; sourceTree = "<group>"; };
+		8923C286130387CA6D6A0535 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		92F91446092340D77A9CE8D8 /* ModelConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelConfig.swift; sourceTree = "<group>"; };
 		99387AC62F9BCC7D67D67C7B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		B504B60487765D53F14212CA /* DatabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseService.swift; sourceTree = "<group>"; };
@@ -83,9 +87,11 @@
 			isa = PBXGroup;
 			children = (
 				B967B310FF31D71376E434A8 /* ContentView.swift */,
+				8923C286130387CA6D6A0535 /* DesignSystem.swift */,
 				3F3DDF8BBC226266CE81F052 /* EntryDetailView.swift */,
 				CB9119DE66C094D14D34AFAE /* EntryRowView.swift */,
 				DD28D6D29166FDC5D5CC550D /* IdentificationPanelView.swift */,
+				325628BEE263E4D9F645EC4E /* ImportFlowView.swift */,
 				FF1161E205FD047A0C8554A2 /* LibraryView.swift */,
 			);
 			path = Views;
@@ -236,6 +242,7 @@
 				1E6AF8ECE42F9B09EC24A9BA /* AppDelegate.swift in Sources */,
 				7C64DEEF0FAD89393A62A278 /* ContentView.swift in Sources */,
 				A42055F4F7F9120036CD716E /* DatabaseService.swift in Sources */,
+				41094921254A75610859A08B /* DesignSystem.swift in Sources */,
 				7176A18571C50BA96CFA2C9C /* Entry.swift in Sources */,
 				308875B2A873464E6C37D236 /* EntryDetailView.swift in Sources */,
 				269A3B37CDD653012C0050C1 /* EntryRowView.swift in Sources */,
@@ -243,6 +250,7 @@
 				E98CA4ACD7928D2888A0DA11 /* GemmaActor.swift in Sources */,
 				8709B9D41CB55813EBC324F7 /* IdentificationPanelView.swift in Sources */,
 				FBCF5ED4091050829FFB2828 /* ImageService.swift in Sources */,
+				A1C8E6C0C433315C53466E11 /* ImportFlowView.swift in Sources */,
 				AE87A01E1727F7C79F9D612D /* LibraryView.swift in Sources */,
 				BDDF8C4AEFDF4CDACF6B8A77 /* ModelConfig.swift in Sources */,
 				DC98D1E2BD479B4C99533722 /* PhotoImportService.swift in Sources */,

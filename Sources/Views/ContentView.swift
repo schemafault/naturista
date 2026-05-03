@@ -1,255 +1,59 @@
 import SwiftUI
 import AppKit
 
-struct ContentView: View {
-    @State private var selectedTab = 1
-    @State private var lastEntry: Entry?
-    @State private var importedImage: NSImage?
-    @State private var identificationResult: IdentificationResult?
-    @State private var identificationError: String?
-    @State private var isImporting = false
-    @State private var isIdentifying = false
-    @State private var isGeneratingPlate = false
-    @State private var plateError: String?
+enum NavRoute: Equatable {
+    case library
+    case detail(Entry)
+    case importFlow
 
-    var body: some View {
-        TabView(selection: $selectedTab) {
-            ImportView(
-                importedImage: $importedImage,
-                identificationResult: $identificationResult,
-                identificationError: $identificationError,
-                isImporting: $isImporting,
-                isIdentifying: $isIdentifying,
-                isGeneratingPlate: $isGeneratingPlate,
-                plateError: $plateError,
-                lastEntry: $lastEntry,
-                onGeneratePlate: handleGeneratePlate
-            )
-            .tabItem {
-                Label("Import", systemImage: "photo.on.rectangle")
-            }
-            .tag(0)
-
-            LibraryView()
-                .tabItem {
-                    Label("Library", systemImage: "books.vertical")
-                }
-                .tag(1)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func handleGeneratePlate() {
-        guard let entry = lastEntry, let entryId = UUID(uuidString: entry.id) else { return }
-        isGeneratingPlate = true
-        plateError = nil
-
-        Task {
-            do {
-                try await PipelineService.shared.runIllustrationAndCompose(entryId: entryId)
-                if let updated = try await DatabaseService.shared.fetchEntry(id: entry.id) {
-                    await MainActor.run {
-                        lastEntry = updated
-                        isGeneratingPlate = false
-                        selectedTab = 1
-                    }
-                } else {
-                    await MainActor.run {
-                        isGeneratingPlate = false
-                        selectedTab = 1
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    plateError = error.localizedDescription
-                    isGeneratingPlate = false
-                }
-            }
+    static func == (lhs: NavRoute, rhs: NavRoute) -> Bool {
+        switch (lhs, rhs) {
+        case (.library, .library), (.importFlow, .importFlow): return true
+        case let (.detail(a), .detail(b)): return a.id == b.id
+        default: return false
         }
     }
 }
 
-struct ImportView: View {
-    @Binding var importedImage: NSImage?
-    @Binding var identificationResult: IdentificationResult?
-    @Binding var identificationError: String?
-    @Binding var isImporting: Bool
-    @Binding var isIdentifying: Bool
-    @Binding var isGeneratingPlate: Bool
-    @Binding var plateError: String?
-    @Binding var lastEntry: Entry?
-    var onGeneratePlate: () -> Void
+struct ContentView: View {
+    @State private var route: NavRoute = .library
+    @State private var libraryReloadToken = UUID()
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                headerSection
+        ZStack {
+            DS.paper.ignoresSafeArea()
 
-                if importedImage != nil {
-                    photoPreviewSection
-                    identificationSection
-                    generatePlateSection
-                } else {
-                    importPromptSection
+            Group {
+                switch route {
+                case .library:
+                    LibraryView(
+                        reloadToken: libraryReloadToken,
+                        onOpen: { route = .detail($0) },
+                        onImport: { route = .importFlow }
+                    )
+                case .detail(let entry):
+                    EntryDetailView(
+                        entry: entry,
+                        onBack: { route = .library },
+                        onDeleted: {
+                            libraryReloadToken = UUID()
+                            route = .library
+                        },
+                        onUpdated: { _ in libraryReloadToken = UUID() }
+                    )
+                case .importFlow:
+                    ImportFlowView(
+                        onCancel: { route = .library },
+                        onCompleted: {
+                            libraryReloadToken = UUID()
+                            route = .library
+                        }
+                    )
                 }
-
-                Spacer(minLength: 40)
             }
-            .padding()
+            .transition(.opacity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var headerSection: some View {
-        VStack(spacing: 4) {
-            Text("Naturista")
-                .font(.largeTitle)
-                .padding(.top, 20)
-
-            Text("A botanical field journal")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-        }
-    }
-
-    private var importPromptSection: some View {
-        VStack(spacing: 20) {
-            Spacer()
-
-            Button(action: importPhoto) {
-                Label("Import Photo", systemImage: "photo.on.rectangle")
-                    .font(.title2)
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, 16)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(isImporting)
-
-            if isImporting {
-                ProgressView()
-                    .padding()
-            }
-
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private var photoPreviewSection: some View {
-        VStack(spacing: 12) {
-            if let image = importedImage {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxHeight: 300)
-                    .cornerRadius(8)
-                    .shadow(radius: 4)
-            }
-
-            Button(action: importPhoto) {
-                Label("Replace Photo", systemImage: "arrow.triangle.2.circlepath")
-                    .font(.subheadline)
-            }
-            .buttonStyle(.bordered)
-            .disabled(isIdentifying)
-        }
-    }
-
-    @ViewBuilder
-    private var identificationSection: some View {
-        if isIdentifying {
-            IdentificationLoadingView()
-        } else if let error = identificationError {
-            IdentificationErrorView(message: error)
-        } else if let result = identificationResult, let entry = lastEntry {
-            IdentificationPanelView(
-                result: result,
-                entryStatus: entry.userStatus
-            )
-        }
-    }
-
-    private var generatePlateSection: some View {
-        VStack(spacing: 12) {
-            Button(action: onGeneratePlate) {
-                HStack {
-                    if isGeneratingPlate {
-                        ProgressView().controlSize(.small)
-                        Text("Generating plate…")
-                    } else {
-                        Label("Generate Plate", systemImage: "paintpalette")
-                    }
-                }
-                .font(.headline)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(isIdentifying || isGeneratingPlate || identificationResult == nil || identificationError != nil)
-
-            if let error = plateError {
-                Text(error)
-                    .font(.callout)
-                    .foregroundColor(.red)
-                    .multilineTextAlignment(.center)
-            }
-        }
-    }
-
-    private func importPhoto() {
-        isImporting = true
-        identificationResult = nil
-        identificationError = nil
-        lastEntry = nil
-        importedImage = nil
-
-        let panel = NSOpenPanel()
-        panel.title = "Import Photo"
-        panel.allowedContentTypes = [.image]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-
-        guard panel.runModal() == .OK, let url = panel.url else {
-            isImporting = false
-            return
-        }
-
-        if let image = NSImage(contentsOf: url) {
-            importedImage = image
-        }
-
-        isImporting = false
-        isIdentifying = true
-
-        Task {
-            do {
-                let entry = try await PhotoImportService.shared.importPhoto(from: url)
-
-                let decoder = JSONDecoder()
-                var result: IdentificationResult?
-                var error: String?
-
-                if let data = entry.identificationJson.data(using: .utf8),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let _ = json["error"] {
-                    error = json["error"] as? String
-                } else if !entry.identificationJson.isEmpty {
-                    result = try decoder.decode(IdentificationResult.self, from: Data(entry.identificationJson.utf8))
-                }
-
-                await MainActor.run {
-                    lastEntry = entry
-                    identificationResult = result
-                    identificationError = error
-                    isIdentifying = false
-                }
-            } catch {
-                await MainActor.run {
-                    identificationError = error.localizedDescription
-                    isIdentifying = false
-                }
-            }
-        }
+        .background(DS.paper)
     }
 }

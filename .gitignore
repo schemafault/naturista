@@ -1,0 +1,81 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad/
+**/xcuserdata/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/
+Package.pins
+Package.resolved.user
+
+# CocoaPods / Carthage (in case added later)
+Pods/
+Carthage/Build/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Python virtual envs
+.venv/
+venv/
+env/
+ENV/
+
+# ML model weights (large, fetched/downloaded locally)
+models/
+*.safetensors
+*.gguf
+*.bin
+*.pt
+*.ckpt
+*.onnx
+*.mlmodel
+*.mlpackage
+
+# Runtime-generated outputs
+generated/
+
+# User-supplied photos / working assets
+assets/originals/
+assets/working/
+test_photos/
+
+# Claude Code local state
+.claude/worktrees/
+.claude/cache/
+.claude/local/
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs and env
+*.log
+.env
+.env.local

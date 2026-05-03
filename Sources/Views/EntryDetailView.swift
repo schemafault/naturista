@@ -3,334 +3,501 @@ import AppKit
 
 struct EntryDetailView: View {
     @State var entry: Entry
-    var onDelete: ((Entry) -> Void)?
-    @Environment(\.dismiss) private var dismiss
-    @State private var isSavingNotes = false
-    @State private var isExporting = false
+    var onBack: () -> Void
+    var onDeleted: (() -> Void)? = nil
+    var onUpdated: ((Entry) -> Void)? = nil
+
+    @State private var tab: PlateTab = .plate
+    @State private var imageRefreshID = UUID()
     @State private var isRetrying = false
     @State private var isRecomposing = false
+    @State private var isExporting = false
     @State private var isDeleting = false
     @State private var showDeleteConfirm = false
-    @State private var exportError: String?
-    @State private var retryError: String?
-    @State private var recomposeError: String?
-    @State private var deleteError: String?
-    @State private var imageRefreshID = UUID()
+    @State private var showNotes = false
+    @State private var pipelineError: String?
+
+    enum PlateTab { case plate, photo }
 
     var body: some View {
         VStack(spacing: 0) {
-            mainImage
-                .frame(maxHeight: 400)
-                .frame(maxWidth: .infinity)
-                .background(Color.gray.opacity(0.1))
-
+            topBar
+            Hairline()
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    headerSection
-                    badgesSection
-                    notesSection
-                    errorSection
-                    actionButtonsSection
+                HStack(alignment: .top, spacing: 0) {
+                    plateColumn
+                        .frame(maxWidth: .infinity, alignment: .top)
+                        .padding(.horizontal, 56)
+                        .padding(.vertical, 48)
+                        .background(DS.paper)
+
+                    Rectangle().fill(DS.hairlineSoft).frame(width: 1)
+
+                    sidePanel
+                        .frame(width: 360, alignment: .leading)
+                        .padding(.horizontal, 36)
+                        .padding(.vertical, 48)
+                        .background(DS.paper)
                 }
-                .padding()
             }
+            .background(DS.paper)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(DS.paper)
+        .onAppear { updateWindowTitle() }
+        .sheet(isPresented: $showNotes) {
+            NotesEditor(entry: $entry, onSave: persistEntry)
+        }
+        .confirmationDialog(
+            "Delete this plate?",
+            isPresented: $showDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive, action: deleteEntry)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Removes the entry, original photo, working copy, illustration, and plate. This cannot be undone.")
+        }
     }
 
-    @ViewBuilder
-    private var mainImage: some View {
-        if let plateFilename = entry.plateFilename {
-            let url = AppPaths.plates.appendingPathComponent(plateFilename)
-            if FileManager.default.fileExists(atPath: url.path) {
-                LocalDiskImage(url: url, refreshToken: imageRefreshID, contentMode: .fit) {
-                    illustrationImageView
+    // MARK: - Top bar
+
+    private var topBar: some View {
+        HStack {
+            Button(action: onBack) {
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 11, weight: .regular))
+                    Text("Library")
                 }
-            } else {
-                illustrationImageView
             }
-        } else {
-            illustrationImageView
-        }
-    }
+            .buttonStyle(GhostButtonStyle())
 
-    @ViewBuilder
-    private var illustrationImageView: some View {
-        if let illustrationFilename = entry.illustrationFilename {
-            let url = AppPaths.illustrations.appendingPathComponent(illustrationFilename)
-            if FileManager.default.fileExists(atPath: url.path) {
-                LocalDiskImage(url: url, refreshToken: imageRefreshID, contentMode: .fit) {
-                    workingImageView
+            Spacer()
+
+            MonoLabel(text: "PLATE \(plateNumber)", color: DS.muted)
+
+            Spacer()
+
+            HStack(spacing: 10) {
+                Button("Notes") { showNotes = true }
+                    .buttonStyle(QuietButtonStyle())
+                Button(action: exportPlate) {
+                    HStack(spacing: 6) {
+                        if isExporting { ProgressView().controlSize(.small) }
+                        Text("Export PNG")
+                    }
                 }
-            } else {
-                workingImageView
+                .buttonStyle(QuietButtonStyle())
+                .disabled(entry.plateFilename == nil || isExporting)
             }
-        } else {
-            workingImageView
+        }
+        .padding(.horizontal, 32)
+        .padding(.vertical, 18)
+        .background(DS.paper)
+    }
+
+    // MARK: - Plate column
+
+    private var plateColumn: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 24) {
+                tabButton(label: "Plate", isActive: tab == .plate) { tab = .plate }
+                tabButton(label: "Original photograph", isActive: tab == .photo) { tab = .photo }
+                Spacer()
+            }
+            .padding(.bottom, 12)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(DS.hairlineSoft).frame(height: 1)
+            }
+
+            plateFrame
+                .padding(.top, 28)
         }
     }
 
-    @ViewBuilder
-    private var workingImageView: some View {
-        let workingURL = AppPaths.working.appendingPathComponent(entry.workingImageFilename)
-        if FileManager.default.fileExists(atPath: workingURL.path) {
-            LocalDiskImage(url: workingURL, refreshToken: imageRefreshID, contentMode: .fit) {
-                placeholderImageView
+    private func tabButton(label: String, isActive: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 12) {
+                Text(label.uppercased())
+                    .font(DS.sans(11.5, weight: .medium))
+                    .tracking(1.4)
+                    .foregroundColor(isActive ? DS.ink : DS.muted)
+                Rectangle()
+                    .fill(isActive ? DS.ink : Color.clear)
+                    .frame(height: 1)
             }
-        } else {
-            placeholderImageView
+            .padding(.top, 4)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
-    private var placeholderImageView: some View {
-        Rectangle()
-            .fill(Color.gray.opacity(0.15))
-            .overlay(
-                Image(systemName: "leaf")
-                    .font(.system(size: 60))
-                    .foregroundColor(.gray.opacity(0.3))
-            )
-    }
-
-    private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(entry.commonName)
-                .font(.title)
-                .fontWeight(.bold)
-
-            if !entry.scientificName.isEmpty {
-                Text(entry.scientificName)
-                    .font(.title3)
-                    .italic()
-                    .foregroundColor(.secondary)
-            }
-
-            if !entry.family.isEmpty {
-                Text("Family: \(entry.family)")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
-        }
-    }
-
-    private var badgesSection: some View {
-        HStack(spacing: 12) {
-            confidenceBadge
-            statusBadge
-        }
-    }
-
-    @ViewBuilder
-    private var confidenceBadge: some View {
-        if let confidence = entry.modelConfidence {
-            HStack(spacing: 4) {
-                Image(systemName: confidenceIcon(for: confidence))
-                Text("Model certainty: \(confidence)")
-            }
-            .font(.caption)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(confidenceColor(for: confidence).opacity(0.15))
-            .foregroundColor(confidenceColor(for: confidence))
-            .clipShape(Capsule())
-        }
-    }
-
-    private var statusBadge: some View {
-        let (statusText, statusColor): (String, Color) = {
-            switch entry.userStatus {
-            case "confirmed": return ("Confirmed", .green)
-            case "rejected": return ("Rejected", .red)
-            case "failed": return ("Failed", .red)
-            case "unreviewed": return ("Unreviewed", .gray)
-            default: return (entry.userStatus.capitalized, .gray)
-            }
-        }()
-
-        return HStack(spacing: 4) {
-            Image(systemName: "person.fill.checkmark")
-            Text("User status: \(statusText)")
-        }
-        .font(.caption)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(statusColor.opacity(0.15))
-        .foregroundColor(statusColor)
-        .clipShape(Capsule())
-    }
-
-    private var notesSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Notes")
-                .font(.headline)
-
-            TextEditor(text: $entry.notes)
-                .font(.body)
-                .frame(minHeight: 80)
-                .padding(8)
-                .background(Color(NSColor.controlBackgroundColor))
-                .cornerRadius(8)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                )
-                .onChange(of: entry.notes) { _, newValue in
-                    saveNotes(newValue)
-                }
-
-            if isSavingNotes {
-                Text("Saving...")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-    }
-
-    private var errorSection: some View {
+    private var plateFrame: some View {
+        // Plates produced by PlateCompositor already include the title,
+        // binomial, family, and plate number. When we have a plate, show
+        // the image alone inside a hairline frame to avoid duplicating
+        // those labels. Otherwise wrap the illustration / placeholder in
+        // the herbarium chrome so the entry still reads as a plate.
         Group {
-            if entry.userStatus == "failed" {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.red)
-                        Text("Entry failed")
-                            .font(.headline)
-                            .foregroundColor(.red)
-                    }
+            if tab == .photo {
+                ZStack {
+                    DS.paper
+                    Rectangle().stroke(DS.hairline, lineWidth: 1)
+                    photoBody.padding(14)
+                }
+                .aspectRatio(3.0/4.0, contentMode: .fit)
+            } else if entry.plateFilename != nil {
+                ZStack {
+                    DS.paper
+                    Rectangle().stroke(DS.hairline, lineWidth: 1)
+                    plateImageOnly.padding(14)
+                }
+                .aspectRatio(0.707, contentMode: .fit)
+            } else {
+                framedComposition
+                    .aspectRatio(3.0/4.0, contentMode: .fit)
+            }
+        }
+        .frame(maxWidth: 600)
+    }
 
-                    if !entry.notes.isEmpty {
-                        Text(errorMessageFromNotes)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
+    @ViewBuilder
+    private var plateImageOnly: some View {
+        if let plate = entry.plateFilename {
+            let url = AppPaths.plates.appendingPathComponent(plate)
+            if FileManager.default.fileExists(atPath: url.path) {
+                LocalImage(url: url) { framedComposition }
+            } else {
+                framedComposition
+            }
+        } else {
+            framedComposition
+        }
+    }
 
-                    Button(action: retryPipeline) {
-                        HStack {
-                            if isRetrying {
-                                ProgressView()
-                                    .scaleEffect(0.7)
-                                    .padding(.trailing, 4)
+    private var framedComposition: some View {
+        ZStack {
+            DS.paper
+            Rectangle().stroke(DS.hairline, lineWidth: 1)
+            Rectangle().stroke(DS.hairlineSoft, lineWidth: 1).padding(14)
+
+            VStack(spacing: 0) {
+                VStack(spacing: 6) {
+                    MonoLabel(text: "PLATE \(plateNumber)", color: DS.muted)
+                        .padding(.bottom, 8)
+                    Text(entry.commonName.smallCapsForHerbarium)
+                        .font(DS.serif(28, weight: .regular))
+                        .tracking(1.2)
+                        .foregroundColor(DS.ink)
+                        .multilineTextAlignment(.center)
+                    if !entry.scientificName.isEmpty {
+                        Text(entry.scientificName)
+                            .font(DS.serif(15, italic: true))
+                            .foregroundColor(DS.inkSoft)
+                            .padding(.top, 2)
+                    }
+                }
+                .padding(.horizontal, 40)
+                .padding(.top, 36)
+                .padding(.bottom, 24)
+
+                illustrationBody
+                    .padding(.horizontal, 40)
+
+                HStack {
+                    if !entry.family.isEmpty {
+                        Text(entry.family)
+                            .font(DS.serif(13, italic: true))
+                            .foregroundColor(DS.mutedDeep)
+                    }
+                    Spacer()
+                    MonoLabel(text: footerDate.uppercased(), color: DS.muted)
+                }
+                .padding(.horizontal, 40)
+                .padding(.top, 20)
+                .padding(.bottom, 24)
+            }
+            .padding(14)
+        }
+    }
+
+    @ViewBuilder
+    private var illustrationBody: some View {
+        let illustrationLabel = "\(entry.commonName) · botanical illustration"
+        Group {
+            illustrationFallback(label: illustrationLabel)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(minHeight: 220)
+        .frame(maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private func illustrationFallback(label: String) -> some View {
+        if let illus = entry.illustrationFilename {
+            let url = AppPaths.illustrations.appendingPathComponent(illus)
+            if FileManager.default.fileExists(atPath: url.path) {
+                LocalImage(url: url) { PlatePlaceholder(label: label) }
+            } else {
+                PlatePlaceholder(label: label)
+            }
+        } else {
+            PlatePlaceholder(label: label)
+        }
+    }
+
+    @ViewBuilder
+    private var photoBody: some View {
+        let url = AppPaths.working.appendingPathComponent(entry.workingImageFilename)
+        if FileManager.default.fileExists(atPath: url.path) {
+            LocalImage(url: url) { PlatePlaceholder(label: "imported photograph") }
+        } else {
+            PlatePlaceholder(label: "imported photograph")
+        }
+    }
+
+    // MARK: - Side panel
+
+    private var sidePanel: some View {
+        VStack(alignment: .leading, spacing: 28) {
+            VStack(alignment: .leading, spacing: 4) {
+                Eyebrow(text: "Identification")
+                Text(entry.commonName)
+                    .font(DS.serif(26, weight: .regular))
+                    .foregroundColor(DS.ink)
+                if !entry.scientificName.isEmpty {
+                    Text(entry.scientificName)
+                        .font(DS.serif(15, italic: true))
+                        .foregroundColor(DS.inkSoft)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 0) {
+                Hairline(color: DS.hairline)
+                detailRow(label: "Family") {
+                    Text(entry.family.isEmpty ? "—" : entry.family)
+                        .font(DS.serif(13, italic: true))
+                        .foregroundColor(DS.ink)
+                }
+                detailRow(label: "Captured") {
+                    Text(displayCaptureDate)
+                        .font(DS.sans(12.5))
+                        .foregroundColor(DS.ink)
+                }
+                detailRow(label: "Plate") {
+                    Text(plateNumber)
+                        .font(DS.sans(12.5))
+                        .foregroundColor(DS.ink)
+                }
+                detailRow(label: "Model certainty") {
+                    HStack(spacing: 6) {
+                        ConfidenceDot(level: entry.modelConfidence)
+                        Text((entry.modelConfidence ?? "Unknown").capitalized)
+                            .font(DS.sans(12.5))
+                            .foregroundColor(DS.ink)
+                    }
+                }
+            }
+
+            if !visibleEvidence.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Eyebrow(text: "Visible characters")
+                    FlowingTags(tags: visibleEvidence)
+                }
+            }
+
+            if !alternatives.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Eyebrow(text: "Alternatives")
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(Array(alternatives.enumerated()), id: \.offset) { _, alt in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(alt.commonName)
+                                    .font(DS.sans(13))
+                                    .foregroundColor(DS.ink)
+                                if !alt.scientificName.isEmpty {
+                                    Text(alt.scientificName)
+                                        .font(DS.serif(12, italic: true))
+                                        .foregroundColor(DS.mutedDeep)
+                                }
+                                if !alt.reason.isEmpty {
+                                    Text(alt.reason)
+                                        .font(DS.sans(11))
+                                        .tracking(0.4)
+                                        .foregroundColor(DS.muted)
+                                        .padding(.top, 2)
+                                }
                             }
-                            Text("Retry Pipeline")
+                            .padding(.bottom, 10)
+                            .overlay(alignment: .bottom) {
+                                Rectangle().fill(DS.hairlineSoft).frame(height: 1)
+                            }
                         }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isRetrying)
+                }
+            }
 
-                    if let error = retryError {
-                        Text(error)
-                            .font(.caption)
-                            .foregroundColor(.red)
+            if !entry.notes.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Eyebrow(text: "Notes")
+                    Text(entry.notes)
+                        .font(DS.serif(14.5, italic: true))
+                        .foregroundColor(DS.inkSoft)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Eyebrow(text: "Workspace")
+                HStack(spacing: 10) {
+                    Button(action: retryPipeline) {
+                        HStack(spacing: 6) {
+                            if isRetrying { ProgressView().controlSize(.small) }
+                            Text(entry.plateFilename == nil ? "Run pipeline" : "Re-run pipeline")
+                        }
+                    }
+                    .buttonStyle(QuietButtonStyle())
+                    .disabled(isRetrying || isRecomposing || isDeleting)
+
+                    Button(action: recomposePlate) {
+                        HStack(spacing: 6) {
+                            if isRecomposing { ProgressView().controlSize(.small) }
+                            Text("Recompose plate")
+                        }
+                    }
+                    .buttonStyle(QuietButtonStyle())
+                    .disabled(entry.illustrationFilename == nil || isRetrying || isRecomposing || isDeleting)
+                }
+                Button(role: .destructive) { showDeleteConfirm = true } label: {
+                    HStack(spacing: 6) {
+                        if isDeleting { ProgressView().controlSize(.small) }
+                        Text("Delete entry")
                     }
                 }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.red.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .buttonStyle(GhostButtonStyle())
+                .disabled(isDeleting || isRetrying || isRecomposing)
+                if let err = pipelineError {
+                    Text(err)
+                        .font(DS.sans(11))
+                        .foregroundColor(DS.rust)
+                        .lineLimit(3)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            VStack(alignment: .leading, spacing: 0) {
+                Hairline(color: DS.hairline)
+                Text("Identification produced locally. Treat as a reference — verify with a field guide before consumption or handling.")
+                    .font(DS.sans(11))
+                    .tracking(0.4)
+                    .lineSpacing(3)
+                    .foregroundColor(DS.muted)
+                    .padding(.top, 14)
             }
         }
     }
 
-    private var errorMessageFromNotes: String {
-        if let errorRange = entry.notes.range(of: "failed: ") {
-            let afterFailed = entry.notes[errorRange.upperBound...]
-            if let newlineRange = afterFailed.firstIndex(of: "\n") {
-                return String(afterFailed[..<newlineRange])
-            }
-            return String(afterFailed)
+    private func detailRow<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Eyebrow(text: label, size: 9.5, color: DS.mutedDeep)
+            Spacer(minLength: 16)
+            content()
         }
-        return entry.notes
+        .padding(.vertical, 10)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(DS.hairlineSoft).frame(height: 1)
+        }
     }
 
-    private var actionButtonsSection: some View {
-        VStack(spacing: 12) {
-            Button(action: retryPipeline) {
-                HStack {
-                    if isRetrying {
-                        ProgressView().controlSize(.small)
-                    }
-                    Text(entry.plateFilename == nil ? "Run Pipeline" : "Re-run Pipeline")
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(isRetrying || isRecomposing || isDeleting)
+    // MARK: - Derived
 
-            Button(action: recomposePlate) {
-                HStack {
-                    if isRecomposing {
-                        ProgressView().controlSize(.small)
-                    }
-                    Text("Recompose Plate Only")
-                }
-            }
-            .buttonStyle(.bordered)
-            .disabled(entry.illustrationFilename == nil || isRetrying || isRecomposing || isDeleting)
+    private var plateNumber: String {
+        let suffix = String(entry.id.replacingOccurrences(of: "-", with: "").prefix(4)).uppercased()
+        return "Nº \(suffix)"
+    }
 
-            if let error = recomposeError {
-                Text(error)
-                    .font(.caption)
-                    .foregroundColor(.red)
-            }
+    private var footerDate: String {
+        // Prefer captured-at, fall back to created-at.
+        let iso = ISO8601DateFormatter()
+        let date: Date? = (entry.capturedAt.flatMap { iso.date(from: $0) })
+            ?? iso.date(from: entry.createdAt)
+        guard let d = date else { return entry.createdAt }
+        let f = DateFormatter()
+        f.dateFormat = "MMM d, yyyy"
+        return f.string(from: d)
+    }
 
-            Button("Export PNG", action: exportPlate)
-                .buttonStyle(.bordered)
-                .disabled(entry.plateFilename == nil || isExporting)
+    private var displayCaptureDate: String {
+        let iso = ISO8601DateFormatter()
+        let date: Date? = (entry.capturedAt.flatMap { iso.date(from: $0) })
+            ?? iso.date(from: entry.createdAt)
+        guard let d = date else { return "—" }
+        let f = DateFormatter()
+        f.dateFormat = "d MMMM yyyy"
+        return f.string(from: d)
+    }
 
-            if let error = exportError {
-                Text(error)
-                    .font(.caption)
-                    .foregroundColor(.red)
-            }
+    private struct AlternativeRow {
+        let commonName: String
+        let scientificName: String
+        let reason: String
+    }
 
-            Divider().padding(.vertical, 4)
+    private var visibleEvidence: [String] {
+        guard let data = entry.identificationJson.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let evidence = json["visible_evidence"] as? [String] else { return [] }
+        return evidence
+    }
 
-            Button(role: .destructive, action: { showDeleteConfirm = true }) {
-                HStack {
-                    if isDeleting {
-                        ProgressView().controlSize(.small)
-                    }
-                    Image(systemName: "trash")
-                    Text("Delete Entry")
-                }
-            }
-            .buttonStyle(.bordered)
-            .tint(.red)
-            .disabled(isDeleting || isRetrying || isRecomposing)
-            .confirmationDialog(
-                "Delete this entry?",
-                isPresented: $showDeleteConfirm,
-                titleVisibility: .visible
-            ) {
-                Button("Delete", role: .destructive, action: deleteEntry)
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Removes the entry, original photo, working copy, illustration, and plate. This cannot be undone.")
-            }
+    private var alternatives: [AlternativeRow] {
+        guard let data = entry.identificationJson.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let alts = json["alternatives"] as? [[String: Any]] else { return [] }
+        return alts.map { row in
+            AlternativeRow(
+                commonName: row["common_name"] as? String ?? "",
+                scientificName: row["scientific_name"] as? String ?? "",
+                reason: row["reason"] as? String ?? ""
+            )
+        }
+    }
 
-            if let error = deleteError {
-                Text(error)
-                    .font(.caption)
-                    .foregroundColor(.red)
+    // MARK: - Side effects
+
+    private func updateWindowTitle() {
+        NSApp.windows.first?.title = "Naturista — \(entry.commonName)"
+    }
+
+    private func persistEntry() {
+        let snapshot = entry
+        Task {
+            do {
+                try await DatabaseService.shared.saveEntry(snapshot)
+                await MainActor.run { onUpdated?(snapshot) }
+            } catch {
+                await MainActor.run { pipelineError = error.localizedDescription }
             }
         }
-        .padding(.top, 8)
     }
 
     private func deleteEntry() {
         guard let entryId = UUID(uuidString: entry.id) else { return }
         isDeleting = true
-        deleteError = nil
-
+        pipelineError = nil
         Task {
             do {
                 try await PipelineService.shared.deleteEntry(entryId: entryId)
                 await MainActor.run {
-                    onDelete?(entry)
-                    dismiss()
+                    onDeleted?()
+                    onBack()
                 }
             } catch {
                 await MainActor.run {
-                    deleteError = error.localizedDescription
+                    pipelineError = error.localizedDescription
                     isDeleting = false
                 }
             }
@@ -340,8 +507,7 @@ struct EntryDetailView: View {
     private func recomposePlate() {
         guard let entryId = UUID(uuidString: entry.id) else { return }
         isRecomposing = true
-        recomposeError = nil
-
+        pipelineError = nil
         Task {
             do {
                 try await PipelineService.shared.recomposePlate(entryId: entryId)
@@ -350,57 +516,45 @@ struct EntryDetailView: View {
                         entry = updated
                         imageRefreshID = UUID()
                         isRecomposing = false
+                        onUpdated?(updated)
                     }
                 } else {
                     await MainActor.run { isRecomposing = false }
                 }
             } catch {
                 await MainActor.run {
-                    recomposeError = error.localizedDescription
+                    pipelineError = error.localizedDescription
                     isRecomposing = false
                 }
             }
         }
     }
 
-    private func confidenceIcon(for confidence: String) -> String {
-        switch confidence {
-        case "high": return "checkmark.circle.fill"
-        case "medium": return "questionmark.circle.fill"
-        case "low": return "exclamationmark.triangle.fill"
-        default: return "questionmark.circle.fill"
-        }
-    }
-
-    private func confidenceColor(for confidence: String) -> Color {
-        switch confidence {
-        case "high": return .green
-        case "medium": return .orange
-        case "low": return .red
-        default: return .gray
-        }
-    }
-
-    private func saveNotes(_ notes: String) {
+    private func retryPipeline() {
+        guard let entryId = UUID(uuidString: entry.id) else { return }
+        isRetrying = true
+        pipelineError = nil
         Task {
-            isSavingNotes = true
-            var updatedEntry = entry
-            updatedEntry.notes = notes
             do {
-                try await DatabaseService.shared.saveEntry(updatedEntry)
-                entry = updatedEntry
+                try await PipelineService.shared.runFullPipeline(entryId: entryId)
             } catch {
-                print("Failed to save notes: \(error)")
+                await MainActor.run { pipelineError = error.localizedDescription }
             }
-            isSavingNotes = false
+            if let updated = try? await DatabaseService.shared.fetchEntry(id: entry.id) {
+                await MainActor.run {
+                    entry = updated
+                    imageRefreshID = UUID()
+                    onUpdated?(updated)
+                }
+            }
+            await MainActor.run { isRetrying = false }
         }
     }
 
     private func exportPlate() {
         guard let plateFilename = entry.plateFilename else { return }
-
         isExporting = true
-        exportError = nil
+        pipelineError = nil
 
         let panel = NSSavePanel()
         panel.title = "Export Plate"
@@ -408,93 +562,121 @@ struct EntryDetailView: View {
         panel.nameFieldStringValue = "\(entry.commonName)-plate.png"
         panel.canCreateDirectories = true
 
-        guard panel.runModal() == .OK, let url = panel.url else {
+        guard panel.runModal() == .OK, let destination = panel.url else {
             isExporting = false
             return
         }
 
-        let sourceURL = AppPaths.plates.appendingPathComponent(plateFilename)
-
+        let source = AppPaths.plates.appendingPathComponent(plateFilename)
         do {
-            if FileManager.default.fileExists(atPath: url.path) {
-                try FileManager.default.removeItem(at: url)
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
             }
-            try FileManager.default.copyItem(at: sourceURL, to: url)
+            try FileManager.default.copyItem(at: source, to: destination)
         } catch {
-            exportError = "Failed to export: \(error.localizedDescription)"
+            pipelineError = "Failed to export: \(error.localizedDescription)"
         }
-
         isExporting = false
     }
+}
 
-    private func retryPipeline() {
-        isRetrying = true
-        retryError = nil
-
-        Task {
-            do {
-                try await PipelineService.shared.runFullPipeline(entryId: UUID(uuidString: entry.id)!)
-                if let updatedEntry = try await DatabaseService.shared.fetchEntry(id: entry.id) {
-                    await MainActor.run {
-                        entry = updatedEntry
-                        imageRefreshID = UUID()
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    retryError = error.localizedDescription
-                }
-                if let updatedEntry = try await DatabaseService.shared.fetchEntry(id: entry.id) {
-                    await MainActor.run {
-                        entry = updatedEntry
-                        imageRefreshID = UUID()
-                    }
-                }
-            }
-            await MainActor.run {
-                isRetrying = false
-            }
+// Wraps the SwiftUI tag list so chips wrap onto multiple rows.
+struct FlowingTags: View {
+    let tags: [String]
+    var body: some View {
+        FlowLayout(spacing: 6) {
+            ForEach(tags, id: \.self) { TagChip(text: $0) }
         }
     }
 }
 
-private struct LocalDiskImage<Fallback: View>: View {
-    let url: URL
-    let refreshToken: UUID
-    let contentMode: ContentMode
-    @ViewBuilder var fallback: () -> Fallback
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
 
-    @State private var image: NSImage?
-    @State private var didLoad = false
-
-    var body: some View {
-        Group {
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: contentMode)
-            } else if didLoad {
-                fallback()
-            } else {
-                Color.clear
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var maxX: CGFloat = 0
+        for sub in subviews {
+            let size = sub.sizeThatFits(.unspecified)
+            if x + size.width > width && x > 0 {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
             }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+            maxX = max(maxX, x)
         }
-        .task(id: TaskKey(url: url, token: refreshToken)) {
-            image = nil
-            didLoad = false
-            let target = url
-            let loaded = await Task.detached(priority: .userInitiated) { () -> NSImage? in
-                guard let data = try? Data(contentsOf: target) else { return nil }
-                return NSImage(data: data)
-            }.value
-            if Task.isCancelled { return }
-            image = loaded
-            didLoad = true
-        }
+        return CGSize(width: maxX, height: y + rowHeight)
     }
 
-    private struct TaskKey: Hashable {
-        let url: URL
-        let token: UUID
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let width = bounds.width
+        var x: CGFloat = bounds.minX
+        var y: CGFloat = bounds.minY
+        var rowHeight: CGFloat = 0
+        for sub in subviews {
+            let size = sub.sizeThatFits(.unspecified)
+            if x + size.width > bounds.minX + width && x > bounds.minX {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            sub.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: size.width, height: size.height))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
+private struct NotesEditor: View {
+    @Binding var entry: Entry
+    var onSave: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft: String = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Eyebrow(text: "Notes")
+            Text(entry.commonName)
+                .font(DS.serif(22))
+                .foregroundColor(DS.ink)
+
+            TextEditor(text: $draft)
+                .font(DS.serif(14, italic: true))
+                .scrollContentBackground(.hidden)
+                .padding(12)
+                .background(DS.paperDeep)
+                .overlay(Rectangle().stroke(DS.hairline, lineWidth: 1))
+                .frame(minHeight: 220)
+
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(GhostButtonStyle())
+                Button("Save") {
+                    entry.notes = draft
+                    onSave()
+                    dismiss()
+                }
+                .buttonStyle(PrimaryButtonStyle())
+            }
+        }
+        .padding(28)
+        .frame(width: 520, height: 380)
+        .background(DS.paper)
+        .onAppear { draft = entry.notes }
+    }
+}
+
+// Adds a touch of editorial small-caps to the plate title.
+private extension String {
+    var smallCapsForHerbarium: String {
+        // SwiftUI doesn't expose font-variant: small-caps cleanly across
+        // serif renderers, so render uppercase as a near-equivalent.
+        self.uppercased()
     }
 }

@@ -2,139 +2,132 @@ import SwiftUI
 
 struct EntryRowView: View {
     let entry: Entry
-    let onRetry: ((Entry) -> Void)?
-    let imageSize: CGFloat
+    var width: CGFloat = 240
 
-    init(entry: Entry, imageSize: CGFloat = 160, onRetry: ((Entry) -> Void)? = nil) {
-        self.entry = entry
-        self.imageSize = imageSize
-        self.onRetry = onRetry
-    }
+    @State private var hovered = false
+
+    private var aspectRatio: CGFloat { PlateRatio.ratio(for: entry.id) }
+    private var height: CGFloat { width / aspectRatio }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ZStack(alignment: .topTrailing) {
-                thumbnailImage
-                    .frame(width: imageSize, height: imageSize)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack(alignment: .topLeading) {
+                figure
+                    .frame(width: width, height: height)
+                    .background(DS.paper)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                        Rectangle()
+                            .stroke(hovered ? DS.inkSoft : DS.hairlineSoft, lineWidth: 1)
                     )
 
-                if entry.userStatus == "failed" {
-                    errorBadge
-                        .offset(x: -4, y: 4)
-                } else if entry.modelConfidence == "low" {
-                    warningBadge
-                        .offset(x: -4, y: 4)
-                }
+                MonoLabel(text: indexLabel)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.commonName)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .lineLimit(1)
-
-                Text(entry.scientificName)
-                    .font(.caption2)
-                    .italic()
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-            }
-
-            if entry.userStatus == "failed", let onRetry = onRetry {
-                Button("Retry") {
-                    onRetry(entry)
+                    .font(DS.serif(17, weight: .regular))
+                    .foregroundColor(DS.ink)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !entry.scientificName.isEmpty {
+                    Text(entry.scientificName)
+                        .font(DS.serif(13, italic: true))
+                        .foregroundColor(DS.mutedDeep)
+                        .lineLimit(1)
                 }
-                .font(.caption2)
-                .buttonStyle(.bordered)
-                .padding(.top, 4)
             }
+            .padding(.top, 10)
+            .opacity(hovered ? 1 : 0)
+            .offset(y: hovered ? 0 : -2)
+            .animation(.easeOut(duration: 0.22), value: hovered)
         }
-        .frame(width: imageSize)
+        .frame(width: width, alignment: .leading)
+        .contentShape(Rectangle())
+        .onHover { hovered = $0 }
     }
 
     @ViewBuilder
-    private var thumbnailImage: some View {
-        if let illustrationFilename = entry.illustrationFilename {
-            let url = AppPaths.illustrations.appendingPathComponent(illustrationFilename)
+    private var figure: some View {
+        if let plate = entry.plateFilename {
+            let url = AppPaths.plates.appendingPathComponent(plate)
             if FileManager.default.fileExists(atPath: url.path) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    case .failure:
-                        placeholderImage
-                    case .empty:
-                        ProgressView()
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    @unknown default:
-                        placeholderImage
-                    }
-                }
+                LocalImage(url: url, fallback: { illustrationOrPlaceholder })
             } else {
-                workingImageOrPlaceholder
+                illustrationOrPlaceholder
             }
         } else {
-            workingImageOrPlaceholder
+            illustrationOrPlaceholder
         }
     }
 
     @ViewBuilder
-    private var workingImageOrPlaceholder: some View {
+    private var illustrationOrPlaceholder: some View {
+        if let illus = entry.illustrationFilename {
+            let url = AppPaths.illustrations.appendingPathComponent(illus)
+            if FileManager.default.fileExists(atPath: url.path) {
+                LocalImage(url: url, fallback: { workingOrPlaceholder })
+            } else {
+                workingOrPlaceholder
+            }
+        } else {
+            workingOrPlaceholder
+        }
+    }
+
+    @ViewBuilder
+    private var workingOrPlaceholder: some View {
         let workingURL = AppPaths.working.appendingPathComponent(entry.workingImageFilename)
         if FileManager.default.fileExists(atPath: workingURL.path) {
-            AsyncImage(url: workingURL) { phase in
-                switch phase {
-                case .success(let image):
-                    image
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                case .failure, .empty:
-                    placeholderImage
-                @unknown default:
-                    placeholderImage
-                }
-            }
+            LocalImage(url: workingURL, fallback: { PlatePlaceholder(label: entry.commonName) })
         } else {
-            placeholderImage
+            PlatePlaceholder(label: entry.commonName)
         }
     }
 
-    private var placeholderImage: some View {
-        Rectangle()
-            .fill(Color.gray.opacity(0.15))
-            .overlay(
-                Image(systemName: "leaf")
-                    .font(.largeTitle)
-                    .foregroundColor(.gray.opacity(0.4))
-            )
+    private var indexLabel: String {
+        let suffix = String(entry.id.replacingOccurrences(of: "-", with: "").prefix(4)).uppercased()
+        return "Nº \(suffix)"
     }
+}
 
-    private var errorBadge: some View {
-        Image(systemName: "exclamationmark.circle.fill")
-            .foregroundColor(.red)
-            .font(.title3)
-            .background(
-                Circle()
-                    .fill(.white)
-                    .frame(width: 20, height: 20)
-            )
-    }
+// Loads a local image off the main thread and fades into a fallback view if
+// the load fails. Avoids AsyncImage's URLCache which lingers on regenerated
+// plate files.
+struct LocalImage<Fallback: View>: View {
+    let url: URL
+    var contentMode: ContentMode = .fit
+    @ViewBuilder var fallback: () -> Fallback
 
-    private var warningBadge: some View {
-        Image(systemName: "exclamationmark.triangle.fill")
-            .foregroundColor(.orange)
-            .font(.title3)
-            .background(
-                Circle()
-                    .fill(.white)
-                    .frame(width: 20, height: 20)
-            )
+    @State private var image: NSImage?
+    @State private var didLoad = false
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: contentMode)
+                    .clipped()
+            } else if didLoad {
+                fallback()
+            } else {
+                Color.clear
+            }
+        }
+        .task(id: url) {
+            image = nil
+            didLoad = false
+            let target = url
+            let loaded = await Task.detached(priority: .userInitiated) { () -> NSImage? in
+                guard let data = try? Data(contentsOf: target) else { return nil }
+                return NSImage(data: data)
+            }.value
+            if Task.isCancelled { return }
+            image = loaded
+            didLoad = true
+        }
     }
 }
 

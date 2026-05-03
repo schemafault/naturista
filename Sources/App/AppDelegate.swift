@@ -18,14 +18,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let contentView = ContentView()
 
         window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 800),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
 
-        window?.title = "Naturista"
-        window?.minSize = NSSize(width: 900, height: 600)
+        window?.title = "Naturista — Field Journal"
+        window?.minSize = NSSize(width: 960, height: 640)
+        window?.titlebarAppearsTransparent = true
+        window?.titleVisibility = .visible
+        window?.backgroundColor = NSColor(srgbRed: 245/255, green: 240/255, blue: 229/255, alpha: 1)
         window?.contentView = NSHostingView(rootView: contentView)
         window?.center()
         window?.makeKeyAndOrderFront(nil)
