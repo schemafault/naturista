@@ -100,7 +100,7 @@ struct EntryDetailView: View {
     // MARK: - Plate column
 
     private var plateColumn: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .center, spacing: 0) {
             HStack(spacing: 24) {
                 tabButton(label: "Plate", isActive: tab == .plate) { tab = .plate }
                 tabButton(label: "Original photograph", isActive: tab == .photo) { tab = .photo }

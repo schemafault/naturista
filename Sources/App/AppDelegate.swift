@@ -28,6 +28,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window?.minSize = NSSize(width: 960, height: 640)
         window?.titlebarAppearsTransparent = true
         window?.titleVisibility = .visible
+        window?.appearance = NSAppearance(named: .aqua)
         window?.backgroundColor = NSColor(srgbRed: 245/255, green: 240/255, blue: 229/255, alpha: 1)
         window?.contentView = NSHostingView(rootView: contentView)
         window?.center()
