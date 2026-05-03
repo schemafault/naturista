@@ -61,14 +61,14 @@ actor PipelineService {
 
         let workingPath = AppPaths.working.appendingPathComponent(currentEntry.workingImageFilename).path
 
-        await GemmaActor.shared.shutdown()
-
         do {
-            let illustrationPath = try await FluxActor.shared.generate(
-                photoPath: workingPath,
-                identification: identification,
-                entryId: entryId
-            )
+            let illustrationPath = try await ModelLease.shared.withExclusive(.illustration) {
+                try await FluxActor.shared.generate(
+                    photoPath: workingPath,
+                    identification: identification,
+                    entryId: entryId
+                )
+            }
             print("[regenerate] FluxActor returned path=\(illustrationPath)")
             let attrs = try? FileManager.default.attributesOfItem(atPath: illustrationPath)
             let size = (attrs?[.size] as? Int) ?? -1
@@ -77,10 +77,8 @@ actor PipelineService {
             currentEntry.illustrationFilename = URL(fileURLWithPath: illustrationPath).lastPathComponent
             try await DatabaseService.shared.saveEntry(currentEntry)
             print("[regenerate] saved illustrationFilename=\(currentEntry.illustrationFilename ?? "<nil>")")
-            await FluxActor.shared.shutdown()
         } catch {
             print("[regenerate] error: \(error)")
-            await FluxActor.shared.shutdown()
             throw PipelineError.fluxFailed(error.localizedDescription)
         }
     }
@@ -99,20 +97,18 @@ actor PipelineService {
             throw PipelineError.gemmaFailed("Entry has no valid identification.")
         }
 
-        await GemmaActor.shared.shutdown()
-
         do {
-            let illustrationPath = try await FluxActor.shared.generate(
-                photoPath: workingPath,
-                identification: identification,
-                entryId: entryId
-            )
+            let illustrationPath = try await ModelLease.shared.withExclusive(.illustration) {
+                try await FluxActor.shared.generate(
+                    photoPath: workingPath,
+                    identification: identification,
+                    entryId: entryId
+                )
+            }
             currentEntry.illustrationFilename = URL(fileURLWithPath: illustrationPath).lastPathComponent
             currentEntry.userStatus = "unreviewed"
             try await DatabaseService.shared.saveEntry(currentEntry)
-            await FluxActor.shared.shutdown()
         } catch {
-            await FluxActor.shared.shutdown()
             currentEntry.userStatus = "failed"
             currentEntry.notes = "FLUX generation failed: \(error.localizedDescription)"
             try await DatabaseService.shared.saveEntry(currentEntry)
@@ -129,7 +125,9 @@ actor PipelineService {
 
         let identification: IdentificationResult
         do {
-            let result = try await GemmaActor.shared.identify(photoPath: workingPath)
+            let result = try await ModelLease.shared.withExclusive(.identification) {
+                try await GemmaActor.shared.identify(photoPath: workingPath)
+            }
             currentEntry.setIdentification(.success(result))
             try await DatabaseService.shared.saveEntry(currentEntry)
             identification = result
@@ -140,20 +138,18 @@ actor PipelineService {
             throw PipelineError.gemmaFailed(error.localizedDescription)
         }
 
-        await GemmaActor.shared.shutdown()
-
         do {
-            let illustrationPath = try await FluxActor.shared.generate(
-                photoPath: workingPath,
-                identification: identification,
-                entryId: entryId
-            )
+            let illustrationPath = try await ModelLease.shared.withExclusive(.illustration) {
+                try await FluxActor.shared.generate(
+                    photoPath: workingPath,
+                    identification: identification,
+                    entryId: entryId
+                )
+            }
             currentEntry.illustrationFilename = URL(fileURLWithPath: illustrationPath).lastPathComponent
             currentEntry.userStatus = "unreviewed"
             try await DatabaseService.shared.saveEntry(currentEntry)
-            await FluxActor.shared.shutdown()
         } catch {
-            await FluxActor.shared.shutdown()
             currentEntry.userStatus = "failed"
             currentEntry.notes = "FLUX generation failed: \(error.localizedDescription)"
             try await DatabaseService.shared.saveEntry(currentEntry)

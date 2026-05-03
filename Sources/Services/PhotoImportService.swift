@@ -31,7 +31,9 @@ actor PhotoImportService {
 
         let workingPath = AppPaths.working.appendingPathComponent(workingFilename).path
         do {
-            let identification = try await GemmaActor.shared.identify(photoPath: workingPath)
+            let identification = try await ModelLease.shared.withExclusive(.identification) {
+                try await GemmaActor.shared.identify(photoPath: workingPath)
+            }
             entry.setIdentification(.success(identification))
             try await DatabaseService.shared.saveEntry(entry)
         } catch {
