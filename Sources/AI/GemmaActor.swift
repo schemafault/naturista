@@ -1,109 +1,53 @@
 import Foundation
 
-struct IdentificationResult: Codable, Equatable, Sendable {
-    var kingdom: String
-    var modelConfidence: String
-    var topCandidate: TopCandidate
-    var alternatives: [Alternative]
-    var visibleEvidence: [String]
-    var missingEvidence: [String]
-    var safetyNote: String
-    var error: String?
-
-    enum CodingKeys: String, CodingKey {
-        case kingdom
-        case modelConfidence = "model_confidence"
-        case topCandidate = "top_candidate"
-        case alternatives
-        case visibleEvidence = "visible_evidence"
-        case missingEvidence = "missing_evidence"
-        case safetyNote = "safety_note"
-        case error
-    }
-
-    // Legacy JSON (pre-multi-kingdom) has no `kingdom` key — Kingdom.parse
-    // handles that default and case-normalisation in one place.
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        self.kingdom = Kingdom.parse(try c.decodeIfPresent(String.self, forKey: .kingdom)).rawValue
-        self.modelConfidence = try c.decode(String.self, forKey: .modelConfidence)
-        self.topCandidate = try c.decode(TopCandidate.self, forKey: .topCandidate)
-        self.alternatives = (try c.decodeIfPresent([Alternative].self, forKey: .alternatives)) ?? []
-        self.visibleEvidence = (try c.decodeIfPresent([String].self, forKey: .visibleEvidence)) ?? []
-        self.missingEvidence = (try c.decodeIfPresent([String].self, forKey: .missingEvidence)) ?? []
-        self.safetyNote = (try c.decodeIfPresent(String.self, forKey: .safetyNote)) ?? ""
-        self.error = try c.decodeIfPresent(String.self, forKey: .error)
-    }
-}
-
-struct TopCandidate: Codable, Equatable, Sendable {
-    var commonName: String
-    var scientificName: String
-    var family: String
-
-    enum CodingKeys: String, CodingKey {
-        case commonName = "common_name"
-        case scientificName = "scientific_name"
-        case family
-    }
-}
-
-struct Alternative: Codable, Equatable, Sendable {
-    var commonName: String
-    var scientificName: String
-    var reason: String
-
-    enum CodingKeys: String, CodingKey {
-        case commonName = "common_name"
-        case scientificName = "scientific_name"
-        case reason
-    }
-}
-
+// Facade over the chosen `Identifier` implementation. Existing callers
+// (PipelineService, ModelLease) keep talking to GemmaActor.shared; this
+// type just routes to PythonGemmaIdentifier or NativeGemmaIdentifier
+// based on the IdentificationBackendStore flag.
+//
+// Backend choice is captured at first construction. Flipping the flag
+// at runtime is honored on the next call — `shutdown()` tears down the
+// active identifier; the next `identify` rebuilds for whichever backend
+// the flag now reports.
 actor GemmaActor {
     static let shared = GemmaActor()
 
-    private static var scriptPath: String {
-        AppPaths.applicationSupport
-            .appendingPathComponent("Python", isDirectory: true)
-            .appendingPathComponent("gemma_service.py")
-            .path
-    }
+    private var identifier: (any Identifier)?
+    private var activeBackend: IdentificationBackend?
 
-    private let transport: PythonProcessTransport
-
-    private init() {
-        self.transport = PythonProcessTransport(config: .init(
-            scriptPath: GemmaActor.scriptPath,
-            environment: {
-                [
-                    "GEMMA_MODEL_PATH": NSString(string: ModelConfig.gemmaPath).expandingTildeInPath
-                ]
-            },
-            timeoutSeconds: 310,
-            warmupSeconds: 2,
-            stderrLogURL: FileManager.default.temporaryDirectory
-                .appendingPathComponent("naturista_gemma.log")
-        ))
-    }
-
-    private struct IdentifyRequest: Encodable, Sendable {
-        let action: String
-        let photo_path: String
-    }
+    private init() {}
 
     func identify(photoPath: String) async throws -> IdentificationResult {
-        let result = try await transport.call(
-            IdentifyRequest(action: "identify", photo_path: photoPath),
-            responseType: IdentificationResult.self
-        )
-        if let err = result.error, !err.isEmpty {
-            throw PythonRPCError.remote(err)
-        }
-        return result
+        let id = await ensureIdentifier()
+        return try await id.identify(photoPath: photoPath)
     }
 
     func shutdown() async {
-        await transport.shutdown()
+        guard let id = identifier else { return }
+        await id.shutdown()
+        identifier = nil
+        activeBackend = nil
+    }
+
+    // Builds the identifier for the currently-selected backend, or returns
+    // the existing one if it still matches. Tearing down on a flag flip is
+    // the same shutdown the eager FLUX path uses — safe to call from the
+    // identify hot path because the shutdown is short.
+    private func ensureIdentifier() async -> any Identifier {
+        let desired = IdentificationBackendStore.shared.current
+        if let id = identifier, activeBackend == desired { return id }
+
+        if let existing = identifier {
+            await existing.shutdown()
+        }
+
+        let next: any Identifier
+        switch desired {
+        case .python: next = PythonGemmaIdentifier()
+        case .native: next = NativeGemmaIdentifier()
+        }
+        identifier = next
+        activeBackend = desired
+        return next
     }
 }

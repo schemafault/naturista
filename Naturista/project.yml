@@ -11,6 +11,13 @@ packages:
   GRDB:
     url: https://github.com/groue/GRDB.swift
     from: "6.29.0"
+  # mlx-swift-lm hosts the reusable LLM/VLM libraries that used to live
+  # in mlx-swift-examples. We need MLXVLM (Gemma 3/4 image support) and
+  # MLXLMCommon (the shared inference plumbing) for the native Gemma
+  # identifier — see docs/superpowers/specs/2026-05-03-gemma-native-port-phase-1a-design.md.
+  mlx-swift-lm:
+    url: https://github.com/ml-explore/mlx-swift-lm
+    from: "3.31.3"
 
 settings:
   base:
@@ -62,6 +69,10 @@ targets:
         com.apple.security.files.user-selected.read-write: true
     dependencies:
       - package: GRDB
+      - package: mlx-swift-lm
+        product: MLXLMCommon
+      - package: mlx-swift-lm
+        product: MLXVLM
 
 schemes:
   Naturista:
