@@ -1,53 +1,212 @@
 import Foundation
+import MLX
+import MLXLMCommon
+import MLXVLM
 
-// Facade over the chosen `Identifier` implementation. Existing callers
-// (PipelineService, ModelLease) keep talking to GemmaActor.shared; this
-// type just routes to PythonGemmaIdentifier or NativeGemmaIdentifier
-// based on the IdentificationBackendStore flag.
+// In-process Gemma 3/4 identification via mlx-swift-lm. Mirrors the
+// behavior the Python `gemma_service.py` had before the native port:
+// same system + user prompt, max_tokens 2048, greedy sampling, single-
+// image input. Output is post-processed (strip code fences, extract
+// outermost `{...}`, normalize "fungi" → "fungus") before decoding.
 //
-// Backend choice is captured at first construction. Flipping the flag
-// at runtime is honored on the next call — `shutdown()` tears down the
-// active identifier; the next `identify` rebuilds for whichever backend
-// the flag now reports.
+// The container is loaded lazily on the first identify call and held
+// for the actor's lifetime — `ModelLease` calls `shutdown()` to release
+// it before FLUX takes the GPU. A model swap is honored on the next
+// call: if the selected model differs, the container is rebuilt.
 actor GemmaActor {
     static let shared = GemmaActor()
 
-    private var identifier: (any Identifier)?
-    private var activeBackend: IdentificationBackend?
+    enum GemmaError: Error, LocalizedError {
+        case modelDirectoryMissing(URL)
+        case parseFailure(String, raw: String)
+
+        var errorDescription: String? {
+            switch self {
+            case .modelDirectoryMissing(let url):
+                return "Model weights not found at \(url.path). Re-download from the model picker."
+            case .parseFailure(let why, let raw):
+                let preview = raw.prefix(200)
+                return "Identifier returned non-JSON output: \(why). Raw: \(preview)…"
+            }
+        }
+    }
+
+    private var container: ModelContainer?
+    private var loadedModel: GemmaModel?
 
     private init() {}
 
     func identify(photoPath: String) async throws -> IdentificationResult {
-        let id = await ensureIdentifier()
-        return try await id.identify(photoPath: photoPath)
+        // The ChatSession (and its KV cache) is owned by `runOnce` and
+        // goes out of scope when that helper returns or throws. Only
+        // then can `clearCache` drain the per-call buffers — if we
+        // owned the session here, Swift's ARC could keep it alive past
+        // the defer block, leaving the KV cache outside the pool. This
+        // structure guarantees the deallocation ordering.
+        defer { MLX.Memory.clearCache() }
+        let raw = try await runOnce(photoPath: photoPath)
+        return try Self.parseAndValidate(raw)
     }
 
     func shutdown() async {
-        guard let id = identifier else { return }
-        await id.shutdown()
-        identifier = nil
-        activeBackend = nil
+        // Drop the strong reference first so ARC frees the model's
+        // MLXArrays. The metal allocator keeps a buffer cache for
+        // reuse — that's the right tradeoff while warm, but on
+        // shutdown (called by ModelLease before FLUX loads) we want
+        // those bytes back. clearCache() runs after deallocation, so
+        // the order matters.
+        container = nil
+        loadedModel = nil
+        MLX.Memory.clearCache()
     }
 
-    // Builds the identifier for the currently-selected backend, or returns
-    // the existing one if it still matches. Tearing down on a flag flip is
-    // the same shutdown the eager FLUX path uses — safe to call from the
-    // identify hot path because the shutdown is short.
-    private func ensureIdentifier() async -> any Identifier {
-        let desired = IdentificationBackendStore.shared.current
-        if let id = identifier, activeBackend == desired { return id }
+    private func runOnce(photoPath: String) async throws -> String {
+        let model = GemmaModelStore.shared.selected
+        let container = try await ensureContainer(for: model)
+        let session = ChatSession(
+            container,
+            instructions: Self.systemPrompt,
+            generateParameters: GenerateParameters(maxTokens: 2048, temperature: 0),
+            // Disable ChatSession's default 512×512 pre-resize so the
+            // model's own preprocessor sets the resolution (matching
+            // the prior mlx-vlm Python behavior).
+            processing: UserInput.Processing()
+        )
+        return try await session.respond(
+            to: Self.userPrompt,
+            image: .url(URL(fileURLWithPath: photoPath))
+        )
+    }
 
-        if let existing = identifier {
-            await existing.shutdown()
+    private func ensureContainer(for model: GemmaModel) async throws -> ModelContainer {
+        if let container, loadedModel == model { return container }
+
+        // Different model selected — drop the cached one before loading
+        // the new weights. ARC frees the previous container's MLX arrays
+        // when no other reference holds it.
+        if container != nil { container = nil; loadedModel = nil }
+
+        guard model.isInstalled else {
+            throw GemmaError.modelDirectoryMissing(URL(fileURLWithPath: model.localCachePath))
         }
 
-        let next: any Identifier
-        switch desired {
-        case .python: next = PythonGemmaIdentifier()
-        case .native: next = NativeGemmaIdentifier()
-        }
-        identifier = next
-        activeBackend = desired
+        let directory = URL(fileURLWithPath: model.localCachePath)
+        let next = try await VLMModelFactory.shared.loadContainer(
+            from: directory,
+            using: LocalTokenizerLoader()
+        )
+        self.container = next
+        self.loadedModel = model
         return next
+    }
+
+    // MARK: - Prompts
+
+    private static let systemPrompt = """
+        You are a natural-history identification assistant. Analyze the provided image and identify the subject.
+
+        Output ONLY valid JSON in this exact format, with no additional text:
+        {
+          "kingdom": "plant | animal | fungus | other",
+          "model_confidence": "high | medium | low",
+          "top_candidate": {
+            "common_name": "string",
+            "scientific_name": "string",
+            "family": "string"
+          },
+          "alternatives": [
+            {
+              "common_name": "string",
+              "scientific_name": "string",
+              "reason": "string"
+            }
+          ],
+          "visible_evidence": ["string"],
+          "missing_evidence": ["string"],
+          "safety_note": "string"
+        }
+
+        Rules for "kingdom":
+        - "plant" for any vascular or non-vascular plant.
+        - "animal" for any animal — mammal, bird, reptile, amphibian, fish, insect, mollusc, etc.
+        - "fungus" for mushrooms, brackets, lichens, and other fungi.
+        - "other" if the subject is not a living organism (a manufactured object, food, scenery without a clear subject). For "other" subjects, fill top_candidate.common_name with a brief description (e.g. "ham sandwich"); leave scientific_name and family as empty strings; set alternatives to [].
+
+        Populate visible_evidence with the diagnostic features visible in the image — leaf shape and venation for plants; plumage, pelage, or distinctive markings for animals; cap shape and gill arrangement for fungi; salient details for "other" subjects.
+
+        Tailor safety_note to the kingdom: warn against consumption for plants and fungi; warn against approaching or handling wildlife for animals; for "other" use a brief reference disclaimer.
+        """
+
+    private static let userPrompt =
+        "Identify the subject of this image. Provide your best assessment with supporting visual evidence."
+
+    // MARK: - Parsing
+
+    static func parseAndValidate(_ raw: String) throws -> IdentificationResult {
+        let cleaned = stripCodeFences(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+
+        let json: String
+        if let direct = decodeAttempt(cleaned) {
+            json = direct
+        } else if let extracted = extractOutermostObject(cleaned) {
+            json = extracted
+        } else {
+            throw GemmaError.parseFailure("could not locate JSON object in output", raw: raw)
+        }
+
+        // Normalize "fungi" → "fungus". Gemma sometimes emits the plural
+        // and IdentificationResult's Kingdom.parse would otherwise fall
+        // through to .plant.
+        let normalized = normalizeKingdom(in: json)
+
+        guard let data = normalized.data(using: .utf8) else {
+            throw GemmaError.parseFailure("output not UTF-8", raw: raw)
+        }
+        do {
+            return try JSONDecoder().decode(IdentificationResult.self, from: data)
+        } catch {
+            throw GemmaError.parseFailure("decode failed: \(error.localizedDescription)", raw: raw)
+        }
+    }
+
+    private static func decodeAttempt(_ text: String) -> String? {
+        guard let data = text.data(using: .utf8),
+              (try? JSONSerialization.jsonObject(with: data)) != nil
+        else { return nil }
+        return text
+    }
+
+    private static func stripCodeFences(_ text: String) -> String {
+        guard text.hasPrefix("```") else { return text }
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        var start: Int?
+        var end: Int?
+        for (i, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("```") && start == nil {
+                start = i + 1
+            } else if trimmed == "```" && start != nil {
+                end = i
+                break
+            }
+        }
+        guard let s = start, let e = end, s < e else { return text }
+        return lines[s..<e].joined(separator: "\n")
+    }
+
+    private static func extractOutermostObject(_ text: String) -> String? {
+        guard let first = text.firstIndex(of: "{"),
+              let last = text.lastIndex(of: "}"),
+              first < last
+        else { return nil }
+        return String(text[first...last])
+    }
+
+    private static func normalizeKingdom(in json: String) -> String {
+        json.replacingOccurrences(
+            of: #""kingdom"\s*:\s*"fungi""#,
+            with: #""kingdom": "fungus""#,
+            options: .regularExpression
+        )
     }
 }

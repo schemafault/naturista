@@ -4,7 +4,6 @@ enum ModelConfig {
     // Computed so a model swap via the picker takes effect on the next
     // GemmaActor restart without needing app-relaunch.
     static var gemmaPath: String { GemmaModelStore.shared.selected.localCachePath }
-    static let pythonPath = "~/.cache/naturista-venv/bin/python3"
 }
 
 // MARK: - Identification model registry
@@ -13,7 +12,6 @@ enum GemmaModel: String, CaseIterable, Identifiable, Sendable {
     case gemma4_31b
     case gemma3_12b
     case gemma3_4b
-    case llama32vision_11b
 
     var id: String { rawValue }
 
@@ -22,7 +20,6 @@ enum GemmaModel: String, CaseIterable, Identifiable, Sendable {
         case .gemma4_31b:        return "Gemma 4 31B"
         case .gemma3_12b:        return "Gemma 3 12B"
         case .gemma3_4b:         return "Gemma 3 4B"
-        case .llama32vision_11b: return "Llama 3.2 Vision 11B"
         }
     }
 
@@ -31,7 +28,6 @@ enum GemmaModel: String, CaseIterable, Identifiable, Sendable {
         case .gemma4_31b:        return "mlx-community/gemma-4-31b-it-4bit"
         case .gemma3_12b:        return "mlx-community/gemma-3-12b-it-4bit"
         case .gemma3_4b:         return "mlx-community/gemma-3-4b-it-4bit"
-        case .llama32vision_11b: return "mlx-community/Llama-3.2-11B-Vision-Instruct-4bit"
         }
     }
 
@@ -43,7 +39,6 @@ enum GemmaModel: String, CaseIterable, Identifiable, Sendable {
         case .gemma4_31b:        return "gemma-4-31b-dense-4bit-mlx"
         case .gemma3_12b:        return "gemma-3-12b-it-4bit"
         case .gemma3_4b:         return "gemma-3-4b-it-4bit"
-        case .llama32vision_11b: return "Llama-3.2-11B-Vision-Instruct-4bit"
         }
     }
 
@@ -61,7 +56,6 @@ enum GemmaModel: String, CaseIterable, Identifiable, Sendable {
         case .gemma4_31b:        return 17
         case .gemma3_12b:        return 7.5
         case .gemma3_4b:         return 3.2
-        case .llama32vision_11b: return 5.6
         }
     }
 
@@ -70,7 +64,6 @@ enum GemmaModel: String, CaseIterable, Identifiable, Sendable {
         case .gemma4_31b:        return "Original. Strongest on long-tail species."
         case .gemma3_12b:        return "Default. Half the memory of 31B with comparable accuracy on common species."
         case .gemma3_4b:         return "Lightest. Fastest. Weaker on rare species."
-        case .llama32vision_11b: return "Different VLM family (Meta). Slower per photo; useful as a second opinion."
         }
     }
 
@@ -90,7 +83,6 @@ enum GemmaModel: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .gemma3_4b:         return ModelRequirements(minRAMGB: 8,  recommendedRAMGB: 16, minDiskGB: 5)
         case .gemma3_12b:        return ModelRequirements(minRAMGB: 16, recommendedRAMGB: 24, minDiskGB: 10)
-        case .llama32vision_11b: return ModelRequirements(minRAMGB: 16, recommendedRAMGB: 24, minDiskGB: 8)
         case .gemma4_31b:        return ModelRequirements(minRAMGB: 24, recommendedRAMGB: 36, minDiskGB: 20)
         }
     }

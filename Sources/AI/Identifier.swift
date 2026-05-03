@@ -62,10 +62,3 @@ struct Alternative: Codable, Equatable, Sendable {
     }
 }
 
-// Backend-agnostic seam for identification. PythonGemmaIdentifier wraps
-// the current mlx-vlm subprocess; NativeGemmaIdentifier (Phase 1b) will
-// call mlx-swift-lm in-process. GemmaActor picks one via feature flag.
-protocol Identifier: Actor {
-    func identify(photoPath: String) async throws -> IdentificationResult
-    func shutdown() async
-}

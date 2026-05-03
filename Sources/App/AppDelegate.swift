@@ -1,4 +1,6 @@
 import AppKit
+import Flux2Core
+import FluxTextEncoders
 import SwiftUI
 
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -7,6 +9,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppPaths.ensureDirectories()
         ModelStorageMigrator.migrateIfNeeded()
+        // Pre-flip clone of the user's data into the future sandbox
+        // container. Runs only in non-sandboxed builds; no-ops once
+        // sandbox is enabled and FileManager already resolves into the
+        // container. Cheap (APFS clonefile) and idempotent.
+        SandboxContainerMigrator.migrateIfNeeded()
+        // Redirect Flux2Core's model storage from ~/Library/Caches/models
+        // (the package default) to AppPaths.models, so FLUX weights live
+        // beside the Gemma weights and survive the system Caches purge.
+        // FLUX has TWO downloaders with independent customModelsDirectory
+        // overrides: Flux2Core (transformer + VAE) and FluxTextEncoders
+        // (Qwen3 text encoder). Both must be redirected, otherwise the
+        // text encoder silently lands in the wrong place and the pipeline
+        // throws "Klein text encoder not loaded" at first generate.
+        ModelRegistry.customModelsDirectory = AppPaths.models
+        TextEncoderModelDownloader.customModelsDirectory = AppPaths.models
+        TextEncoderModelDownloader.reconfigureHubApi()
         installMainMenu()
 
         Task {
