@@ -89,7 +89,7 @@ struct EntryDetailView: View {
                     }
                 }
                 .buttonStyle(QuietButtonStyle())
-                .disabled(entry.plateFilename == nil || isExporting)
+                .disabled(entry.illustrationFilename == nil || isExporting)
             }
         }
         .padding(.horizontal, 32)
@@ -134,11 +134,6 @@ struct EntryDetailView: View {
     }
 
     private var plateFrame: some View {
-        // Plates produced by PlateCompositor already include the title,
-        // binomial, family, and plate number. When we have a plate, show
-        // the image alone inside a hairline frame to avoid duplicating
-        // those labels. Otherwise wrap the illustration / placeholder in
-        // the herbarium chrome so the entry still reads as a plate.
         Group {
             if tab == .photo {
                 ZStack {
@@ -147,111 +142,20 @@ struct EntryDetailView: View {
                     photoBody.padding(14)
                 }
                 .aspectRatio(3.0/4.0, contentMode: .fit)
-            } else if entry.plateFilename != nil {
-                ZStack {
-                    DS.paper
-                    Rectangle().stroke(DS.hairline, lineWidth: 1)
-                    plateImageOnly.padding(14)
-                }
-                .aspectRatio(0.707, contentMode: .fit)
             } else {
-                framedComposition
-                    .aspectRatio(3.0/4.0, contentMode: .fit)
+                PlateFrameView(entry: entry, refreshToken: imageRefreshID)
             }
         }
         .frame(maxWidth: 600)
     }
 
     @ViewBuilder
-    private var plateImageOnly: some View {
-        if let plate = entry.plateFilename {
-            let url = AppPaths.plates.appendingPathComponent(plate)
-            if FileManager.default.fileExists(atPath: url.path) {
-                LocalImage(url: url) { framedComposition }
-            } else {
-                framedComposition
-            }
-        } else {
-            framedComposition
-        }
-    }
-
-    private var framedComposition: some View {
-        ZStack {
-            DS.paper
-            Rectangle().stroke(DS.hairline, lineWidth: 1)
-            Rectangle().stroke(DS.hairlineSoft, lineWidth: 1).padding(14)
-
-            VStack(spacing: 0) {
-                VStack(spacing: 6) {
-                    MonoLabel(text: "PLATE \(plateNumber)", color: DS.muted)
-                        .padding(.bottom, 8)
-                    Text(entry.commonName.smallCapsForHerbarium)
-                        .font(DS.serif(28, weight: .regular))
-                        .tracking(1.2)
-                        .foregroundColor(DS.ink)
-                        .multilineTextAlignment(.center)
-                    if !entry.scientificName.isEmpty {
-                        Text(entry.scientificName)
-                            .font(DS.serif(15, italic: true))
-                            .foregroundColor(DS.inkSoft)
-                            .padding(.top, 2)
-                    }
-                }
-                .padding(.horizontal, 40)
-                .padding(.top, 36)
-                .padding(.bottom, 24)
-
-                illustrationBody
-                    .padding(.horizontal, 40)
-
-                HStack {
-                    if !entry.family.isEmpty {
-                        Text(entry.family)
-                            .font(DS.serif(13, italic: true))
-                            .foregroundColor(DS.mutedDeep)
-                    }
-                    Spacer()
-                    MonoLabel(text: footerDate.uppercased(), color: DS.muted)
-                }
-                .padding(.horizontal, 40)
-                .padding(.top, 20)
-                .padding(.bottom, 24)
-            }
-            .padding(14)
-        }
-    }
-
-    @ViewBuilder
-    private var illustrationBody: some View {
-        let illustrationLabel = "\(entry.commonName) · botanical illustration"
-        Group {
-            illustrationFallback(label: illustrationLabel)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(minHeight: 220)
-        .frame(maxHeight: .infinity)
-    }
-
-    @ViewBuilder
-    private func illustrationFallback(label: String) -> some View {
-        if let illus = entry.illustrationFilename {
-            let url = AppPaths.illustrations.appendingPathComponent(illus)
-            if FileManager.default.fileExists(atPath: url.path) {
-                LocalImage(url: url) { PlatePlaceholder(label: label) }
-            } else {
-                PlatePlaceholder(label: label)
-            }
-        } else {
-            PlatePlaceholder(label: label)
-        }
-    }
-
-    @ViewBuilder
     private var photoBody: some View {
         let url = AppPaths.working.appendingPathComponent(entry.workingImageFilename)
         if FileManager.default.fileExists(atPath: url.path) {
-            LocalImage(url: url) { PlatePlaceholder(label: "imported photograph") }
+            LocalImage(url: url, refreshToken: imageRefreshID) {
+                PlatePlaceholder(label: "imported photograph")
+            }
         } else {
             PlatePlaceholder(label: "imported photograph")
         }
@@ -361,14 +265,14 @@ struct EntryDetailView: View {
                     .buttonStyle(QuietButtonStyle())
                     .disabled(isRetrying || isRecomposing || isDeleting)
 
-                    Button(action: recomposePlate) {
+                    Button(action: regenerateIllustration) {
                         HStack(spacing: 6) {
                             if isRecomposing { ProgressView().controlSize(.small) }
-                            Text("Recompose plate")
+                            Text("Regenerate illustration")
                         }
                     }
                     .buttonStyle(QuietButtonStyle())
-                    .disabled(entry.illustrationFilename == nil || isRetrying || isRecomposing || isDeleting)
+                    .disabled(entry.identificationJson.isEmpty || isRetrying || isRecomposing || isDeleting)
                 }
                 Button(role: .destructive) { showDeleteConfirm = true } label: {
                     HStack(spacing: 6) {
@@ -504,13 +408,13 @@ struct EntryDetailView: View {
         }
     }
 
-    private func recomposePlate() {
+    private func regenerateIllustration() {
         guard let entryId = UUID(uuidString: entry.id) else { return }
         isRecomposing = true
         pipelineError = nil
         Task {
             do {
-                try await PipelineService.shared.recomposePlate(entryId: entryId)
+                try await PipelineService.shared.regenerateIllustration(entryId: entryId)
                 if let updated = try await DatabaseService.shared.fetchEntry(id: entry.id) {
                     await MainActor.run {
                         entry = updated
@@ -552,7 +456,7 @@ struct EntryDetailView: View {
     }
 
     private func exportPlate() {
-        guard let plateFilename = entry.plateFilename else { return }
+        guard entry.illustrationFilename != nil else { return }
         isExporting = true
         pipelineError = nil
 
@@ -567,16 +471,15 @@ struct EntryDetailView: View {
             return
         }
 
-        let source = AppPaths.plates.appendingPathComponent(plateFilename)
-        do {
-            if FileManager.default.fileExists(atPath: destination.path) {
-                try FileManager.default.removeItem(at: destination)
+        let snapshot = entry
+        Task { @MainActor in
+            do {
+                try PlateCompositor.renderPNG(entry: snapshot, to: destination)
+            } catch {
+                pipelineError = "Failed to export: \(error.localizedDescription)"
             }
-            try FileManager.default.copyItem(at: source, to: destination)
-        } catch {
-            pipelineError = "Failed to export: \(error.localizedDescription)"
+            isExporting = false
         }
-        isExporting = false
     }
 }
 

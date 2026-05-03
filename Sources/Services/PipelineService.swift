@@ -4,7 +4,7 @@ enum PipelineError: Error, LocalizedError {
     case entryNotFound
     case gemmaFailed(String)
     case fluxFailed(String)
-    case compositorFailed(String)
+    case exportFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -14,8 +14,8 @@ enum PipelineError: Error, LocalizedError {
             return "Gemma identification failed: \(message)"
         case .fluxFailed(let message):
             return "FLUX illustration generation failed: \(message)"
-        case .compositorFailed(let message):
-            return "Plate composition failed: \(message)"
+        case .exportFailed(let message):
+            return "Export failed: \(message)"
         }
     }
 }
@@ -45,13 +45,12 @@ actor PipelineService {
         try await DatabaseService.shared.deleteEntry(id: entryId.uuidString)
     }
 
-    func recomposePlate(entryId: UUID) async throws {
+    // Re-runs FLUX on the existing identification to produce a fresh
+    // illustration. The plate composition is rendered live by SwiftUI,
+    // so there's nothing else to recompose.
+    func regenerateIllustration(entryId: UUID) async throws {
         guard var currentEntry = try await DatabaseService.shared.fetchEntry(id: entryId.uuidString) else {
             throw PipelineError.entryNotFound
-        }
-
-        guard let illustrationFilename = currentEntry.illustrationFilename, !illustrationFilename.isEmpty else {
-            throw PipelineError.fluxFailed("Entry has no illustration to recompose from")
         }
 
         let identification: IdentificationResult
@@ -61,51 +60,53 @@ actor PipelineService {
             throw PipelineError.gemmaFailed("Entry has no valid identification: \(error.localizedDescription)")
         }
 
-        do {
-            let plateFilename = try await PlateCompositor.compose(
-                entryId: entryId,
-                commonName: identification.topCandidate.commonName,
-                scientificName: identification.topCandidate.scientificName,
-                family: identification.topCandidate.family,
-                notes: currentEntry.notes,
-                illustrationFilename: illustrationFilename
-            )
-            currentEntry.plateFilename = plateFilename
-            try await DatabaseService.shared.saveEntry(currentEntry)
-        } catch {
-            throw PipelineError.compositorFailed(error.localizedDescription)
-        }
-    }
-
-    func runIllustrationAndCompose(entryId: UUID) async throws {
-        guard var currentEntry = try await DatabaseService.shared.fetchEntry(id: entryId.uuidString) else {
-            throw PipelineError.entryNotFound
-        }
-
         let workingPath = AppPaths.working.appendingPathComponent(currentEntry.workingImageFilename).path
 
-        let decoder = JSONDecoder()
-        let identification: IdentificationResult
-        do {
-            identification = try decoder.decode(IdentificationResult.self, from: Data(currentEntry.identificationJson.utf8))
-        } catch {
-            throw PipelineError.gemmaFailed("Entry has no valid identification: \(error.localizedDescription)")
-        }
-
-        // Free Gemma's ~17GB before loading FLUX so we don't OOM on 48GB machines.
         await GemmaActor.shared.shutdown()
 
-        let illustrationFilename: String
         do {
             let illustrationPath = try await FluxActor.shared.generate(
                 photoPath: workingPath,
                 identification: identification,
                 entryId: entryId
             )
-            illustrationFilename = URL(fileURLWithPath: illustrationPath).lastPathComponent
-            currentEntry.illustrationFilename = illustrationFilename
+            currentEntry.illustrationFilename = URL(fileURLWithPath: illustrationPath).lastPathComponent
             try await DatabaseService.shared.saveEntry(currentEntry)
-            // FLUX is done — free its ~7GB before compose runs.
+            await FluxActor.shared.shutdown()
+        } catch {
+            await FluxActor.shared.shutdown()
+            throw PipelineError.fluxFailed(error.localizedDescription)
+        }
+    }
+
+    // Pipeline now stops once FLUX has produced an illustration. The
+    // herbarium plate is rendered live by SwiftUI, so there's no
+    // post-processing step to bake text into a PNG.
+    func runIllustration(entryId: UUID) async throws {
+        guard var currentEntry = try await DatabaseService.shared.fetchEntry(id: entryId.uuidString) else {
+            throw PipelineError.entryNotFound
+        }
+
+        let workingPath = AppPaths.working.appendingPathComponent(currentEntry.workingImageFilename).path
+
+        let identification: IdentificationResult
+        do {
+            identification = try JSONDecoder().decode(IdentificationResult.self, from: Data(currentEntry.identificationJson.utf8))
+        } catch {
+            throw PipelineError.gemmaFailed("Entry has no valid identification: \(error.localizedDescription)")
+        }
+
+        await GemmaActor.shared.shutdown()
+
+        do {
+            let illustrationPath = try await FluxActor.shared.generate(
+                photoPath: workingPath,
+                identification: identification,
+                entryId: entryId
+            )
+            currentEntry.illustrationFilename = URL(fileURLWithPath: illustrationPath).lastPathComponent
+            currentEntry.userStatus = "unreviewed"
+            try await DatabaseService.shared.saveEntry(currentEntry)
             await FluxActor.shared.shutdown()
         } catch {
             await FluxActor.shared.shutdown()
@@ -114,48 +115,22 @@ actor PipelineService {
             try await DatabaseService.shared.saveEntry(currentEntry)
             throw PipelineError.fluxFailed(error.localizedDescription)
         }
-
-        do {
-            let plateFilename = try await PlateCompositor.compose(
-                entryId: entryId,
-                commonName: identification.topCandidate.commonName,
-                scientificName: identification.topCandidate.scientificName,
-                family: identification.topCandidate.family,
-                notes: currentEntry.notes,
-                illustrationFilename: illustrationFilename
-            )
-            currentEntry.plateFilename = plateFilename
-            currentEntry.userStatus = "unreviewed"
-            try await DatabaseService.shared.saveEntry(currentEntry)
-        } catch {
-            currentEntry.userStatus = "failed"
-            currentEntry.notes = "Plate composition failed: \(error.localizedDescription)"
-            try await DatabaseService.shared.saveEntry(currentEntry)
-            throw PipelineError.compositorFailed(error.localizedDescription)
-        }
     }
 
     func runFullPipeline(entryId: UUID) async throws {
-        var entry: Entry?
-        do {
-            entry = try await DatabaseService.shared.fetchEntry(id: entryId.uuidString)
-        } catch {
-            throw PipelineError.entryNotFound
-        }
-
-        guard var currentEntry = entry else {
+        guard var currentEntry = try await DatabaseService.shared.fetchEntry(id: entryId.uuidString) else {
             throw PipelineError.entryNotFound
         }
 
         let workingPath = AppPaths.working.appendingPathComponent(currentEntry.workingImageFilename).path
 
-        var identificationResult: IdentificationResult?
+        let identification: IdentificationResult
         do {
-            identificationResult = try await GemmaActor.shared.identify(photoPath: workingPath)
-            let encoder = JSONEncoder()
-            currentEntry.identificationJson = String(data: try encoder.encode(identificationResult), encoding: .utf8) ?? ""
-            currentEntry.modelConfidence = identificationResult?.modelConfidence
+            let result = try await GemmaActor.shared.identify(photoPath: workingPath)
+            currentEntry.identificationJson = String(data: try JSONEncoder().encode(result), encoding: .utf8) ?? ""
+            currentEntry.modelConfidence = result.modelConfidence
             try await DatabaseService.shared.saveEntry(currentEntry)
+            identification = result
         } catch {
             currentEntry.userStatus = "failed"
             currentEntry.notes = "Gemma identification failed: \(error.localizedDescription)"
@@ -163,31 +138,17 @@ actor PipelineService {
             throw PipelineError.gemmaFailed(error.localizedDescription)
         }
 
-        guard let identification = identificationResult else {
-            currentEntry.userStatus = "failed"
-            currentEntry.notes = "Gemma identification failed: no result returned"
-            try await DatabaseService.shared.saveEntry(currentEntry)
-            throw PipelineError.gemmaFailed("No identification result returned")
-        }
-
-        guard let identification = identificationResult else {
-            throw PipelineError.gemmaFailed("No identification result")
-        }
-
-        // Free Gemma's ~17GB before loading FLUX so we don't OOM on 48GB machines.
         await GemmaActor.shared.shutdown()
 
-        let illustrationFilename: String
         do {
             let illustrationPath = try await FluxActor.shared.generate(
                 photoPath: workingPath,
                 identification: identification,
                 entryId: entryId
             )
-            illustrationFilename = URL(fileURLWithPath: illustrationPath).lastPathComponent
-            currentEntry.illustrationFilename = illustrationFilename
+            currentEntry.illustrationFilename = URL(fileURLWithPath: illustrationPath).lastPathComponent
+            currentEntry.userStatus = "unreviewed"
             try await DatabaseService.shared.saveEntry(currentEntry)
-            // FLUX is done — free its ~7GB before compose runs.
             await FluxActor.shared.shutdown()
         } catch {
             await FluxActor.shared.shutdown()
@@ -195,30 +156,6 @@ actor PipelineService {
             currentEntry.notes = "FLUX generation failed: \(error.localizedDescription)"
             try await DatabaseService.shared.saveEntry(currentEntry)
             throw PipelineError.fluxFailed(error.localizedDescription)
-        }
-
-        guard let finalEntry = try await DatabaseService.shared.fetchEntry(id: entryId.uuidString) else {
-            throw PipelineError.entryNotFound
-        }
-        currentEntry = finalEntry
-
-        do {
-            let plateFilename = try await PlateCompositor.compose(
-                entryId: entryId,
-                commonName: identification.topCandidate.commonName,
-                scientificName: identification.topCandidate.scientificName,
-                family: identification.topCandidate.family,
-                notes: currentEntry.notes,
-                illustrationFilename: illustrationFilename
-            )
-            currentEntry.plateFilename = plateFilename
-            currentEntry.userStatus = "unreviewed"
-            try await DatabaseService.shared.saveEntry(currentEntry)
-        } catch {
-            currentEntry.userStatus = "failed"
-            currentEntry.notes = "Plate composition failed: \(error.localizedDescription)"
-            try await DatabaseService.shared.saveEntry(currentEntry)
-            throw PipelineError.compositorFailed(error.localizedDescription)
         }
     }
 }

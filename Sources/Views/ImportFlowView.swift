@@ -266,7 +266,7 @@ struct ImportFlowView: View {
         pipelineError = nil
         Task {
             do {
-                try await PipelineService.shared.runIllustrationAndCompose(entryId: entryId)
+                try await PipelineService.shared.runIllustration(entryId: entryId)
                 await MainActor.run { onCompleted() }
             } catch {
                 await MainActor.run {

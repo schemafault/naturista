@@ -239,17 +239,3 @@ struct GhostButtonStyle: ButtonStyle {
     }
 }
 
-// Aspect ratios used by the masonry to give the grid organic variety.
-// Deterministic per id so a given entry always lands at the same height.
-enum PlateRatio {
-    private static let pool: [CGFloat] = [0.78, 0.92, 1.05, 1.20, 1.35, 1.55]
-
-    static func ratio(for id: String) -> CGFloat {
-        var hash: UInt64 = 1469598103934665603
-        for byte in id.utf8 {
-            hash ^= UInt64(byte)
-            hash &*= 1099511628211
-        }
-        return pool[Int(hash % UInt64(pool.count))]
-    }
-}

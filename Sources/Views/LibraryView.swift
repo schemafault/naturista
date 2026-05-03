@@ -220,44 +220,38 @@ struct LibraryView: View {
         } else if filtered.isEmpty {
             emptyResults
         } else {
-            ScrollView {
-                VStack(spacing: 28) {
-                    GeometryReader { geo in
-                        let cols = columnCount(for: geo.size.width)
-                        let gap: CGFloat = 28
+            // GeometryReader sits outside the ScrollView so we can size
+            // the masonry columns from the available width without
+            // clamping the scroll content height.
+            GeometryReader { geo in
+                let cols = columnCount(for: geo.size.width)
+                ScrollView {
+                    VStack(spacing: 28) {
                         MasonryGrid(
                             entries: visibleEntries,
                             columnCount: cols,
-                            spacing: gap,
-                            availableWidth: geo.size.width,
+                            spacing: 28,
                             onOpen: onOpen
                         )
+                        if totalPages > 1 {
+                            PaginationBar(page: page, total: totalPages) { page = $0 }
+                                .padding(.top, 8)
+                        }
                     }
-                    .frame(minHeight: estimatedGridHeight)
-
-                    if totalPages > 1 {
-                        PaginationBar(page: page, total: totalPages) { page = $0 }
-                    }
+                    .padding(.horizontal, 44)
+                    .padding(.top, 36)
+                    .padding(.bottom, 28)
                 }
-                .padding(.horizontal, 44)
-                .padding(.top, 36)
-                .padding(.bottom, 28)
+                .background(DS.paper)
             }
-            .background(DS.paper)
         }
     }
 
     private func columnCount(for width: CGFloat) -> Int {
-        if width >= 1080 { return 4 }
-        if width >= 800  { return 3 }
-        if width >= 540  { return 2 }
+        if width >= 1180 { return 4 }
+        if width >= 760  { return 3 }
+        if width >= 520  { return 2 }
         return 1
-    }
-
-    private var estimatedGridHeight: CGFloat {
-        // Provide a baseline so the GeometryReader column sizing doesn't
-        // collapse before the first layout pass.
-        CGFloat(visibleEntries.count) * 80 + 200
     }
 
     private var emptyState: some View {
@@ -349,36 +343,32 @@ private struct SearchField: View {
     }
 }
 
-// MARK: - Masonry grid
+// MARK: - Masonry
 
 private struct MasonryGrid: View {
     let entries: [Entry]
     let columnCount: Int
     let spacing: CGFloat
-    let availableWidth: CGFloat
     let onOpen: (Entry) -> Void
 
     var body: some View {
-        let columns = distribute(entries: entries, into: columnCount)
-        let totalGaps = spacing * CGFloat(max(columnCount - 1, 0))
-        let columnWidth = max(0, (availableWidth - totalGaps) / CGFloat(columnCount))
-
-        return HStack(alignment: .top, spacing: spacing) {
-            ForEach(0..<columns.count, id: \.self) { i in
+        let buckets = distribute(entries: entries, into: columnCount)
+        HStack(alignment: .top, spacing: spacing) {
+            ForEach(0..<buckets.count, id: \.self) { i in
                 VStack(spacing: 36) {
-                    ForEach(columns[i]) { entry in
-                        EntryRowView(
-                            entry: entry,
-                            width: columnWidth
-                        )
-                        .onTapGesture { onOpen(entry) }
+                    ForEach(buckets[i]) { entry in
+                        EntryRowView(entry: entry, aspectRatio: PlateRatio.ratio(for: entry.id))
+                            .onTapGesture { onOpen(entry) }
                     }
                 }
-                .frame(width: columnWidth, alignment: .top)
+                .frame(maxWidth: .infinity, alignment: .top)
             }
         }
     }
 
+    // Round-robin distribution. Cheap and stable; gives a near-balanced
+    // layout because aspect ratios are bounded (0.78–1.55) and similar
+    // across entries on average.
     private func distribute(entries: [Entry], into count: Int) -> [[Entry]] {
         guard count > 0 else { return [entries] }
         var cols = Array(repeating: [Entry](), count: count)
@@ -386,6 +376,22 @@ private struct MasonryGrid: View {
             cols[i % count].append(e)
         }
         return cols
+    }
+}
+
+// Deterministic per-id aspect ratios so the masonry has organic variety
+// without the layout shifting between renders. Bounded so cards never
+// get extreme.
+enum PlateRatio {
+    private static let pool: [CGFloat] = [0.78, 0.92, 1.05, 1.20, 1.35, 1.55]
+
+    static func ratio(for id: String) -> CGFloat {
+        var hash: UInt64 = 1469598103934665603
+        for byte in id.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1099511628211
+        }
+        return pool[Int(hash % UInt64(pool.count))]
     }
 }
 

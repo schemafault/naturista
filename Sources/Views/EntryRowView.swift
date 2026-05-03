@@ -2,19 +2,21 @@ import SwiftUI
 
 struct EntryRowView: View {
     let entry: Entry
-    var width: CGFloat = 240
+    var aspectRatio: CGFloat = 1.0
 
     @State private var hovered = false
-
-    private var aspectRatio: CGFloat { PlateRatio.ratio(for: entry.id) }
-    private var height: CGFloat { width / aspectRatio }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .topLeading) {
-                figure
-                    .frame(width: width, height: height)
-                    .background(DS.paper)
+                Rectangle()
+                    .fill(DS.paperDeep)
+                    .aspectRatio(aspectRatio, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                    .overlay {
+                        figure
+                    }
+                    .clipped()
                     .overlay(
                         Rectangle()
                             .stroke(hovered ? DS.inkSoft : DS.hairlineSoft, lineWidth: 1)
@@ -43,31 +45,20 @@ struct EntryRowView: View {
             .offset(y: hovered ? 0 : -2)
             .animation(.easeOut(duration: 0.22), value: hovered)
         }
-        .frame(width: width, alignment: .leading)
         .contentShape(Rectangle())
         .onHover { hovered = $0 }
     }
 
+    // The plate composition is rendered live by SwiftUI in the detail
+    // view, so the gallery card just shows the raw illustration cropped
+    // to fill its 4:5 tile. Falls back to the working photograph (and
+    // finally a striped placeholder) while FLUX is still running.
     @ViewBuilder
     private var figure: some View {
-        if let plate = entry.plateFilename {
-            let url = AppPaths.plates.appendingPathComponent(plate)
-            if FileManager.default.fileExists(atPath: url.path) {
-                LocalImage(url: url, fallback: { illustrationOrPlaceholder })
-            } else {
-                illustrationOrPlaceholder
-            }
-        } else {
-            illustrationOrPlaceholder
-        }
-    }
-
-    @ViewBuilder
-    private var illustrationOrPlaceholder: some View {
         if let illus = entry.illustrationFilename {
             let url = AppPaths.illustrations.appendingPathComponent(illus)
             if FileManager.default.fileExists(atPath: url.path) {
-                LocalImage(url: url, fallback: { workingOrPlaceholder })
+                LocalImage(url: url, contentMode: .fill, fallback: { workingOrPlaceholder })
             } else {
                 workingOrPlaceholder
             }
@@ -80,7 +71,7 @@ struct EntryRowView: View {
     private var workingOrPlaceholder: some View {
         let workingURL = AppPaths.working.appendingPathComponent(entry.workingImageFilename)
         if FileManager.default.fileExists(atPath: workingURL.path) {
-            LocalImage(url: workingURL, fallback: { PlatePlaceholder(label: entry.commonName) })
+            LocalImage(url: workingURL, contentMode: .fill, fallback: { PlatePlaceholder(label: entry.commonName) })
         } else {
             PlatePlaceholder(label: entry.commonName)
         }
@@ -98,6 +89,7 @@ struct EntryRowView: View {
 struct LocalImage<Fallback: View>: View {
     let url: URL
     var contentMode: ContentMode = .fit
+    var refreshToken: UUID = UUID()
     @ViewBuilder var fallback: () -> Fallback
 
     @State private var image: NSImage?
@@ -116,7 +108,7 @@ struct LocalImage<Fallback: View>: View {
                 Color.clear
             }
         }
-        .task(id: url) {
+        .task(id: TaskKey(url: url, token: refreshToken)) {
             image = nil
             didLoad = false
             let target = url
@@ -128,6 +120,11 @@ struct LocalImage<Fallback: View>: View {
             image = loaded
             didLoad = true
         }
+    }
+
+    private struct TaskKey: Hashable {
+        let url: URL
+        let token: UUID
     }
 }
 
