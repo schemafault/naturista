@@ -13,25 +13,25 @@ enum GemmaModel: String, CaseIterable, Identifiable, Sendable {
     case gemma4_31b
     case gemma3_12b
     case gemma3_4b
-    case qwen25vl_7b
+    case llama32vision_11b
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .gemma4_31b:  return "Gemma 4 31B"
-        case .gemma3_12b:  return "Gemma 3 12B"
-        case .gemma3_4b:   return "Gemma 3 4B"
-        case .qwen25vl_7b: return "Qwen 2.5-VL 7B"
+        case .gemma4_31b:        return "Gemma 4 31B"
+        case .gemma3_12b:        return "Gemma 3 12B"
+        case .gemma3_4b:         return "Gemma 3 4B"
+        case .llama32vision_11b: return "Llama 3.2 Vision 11B"
         }
     }
 
     var hfRepo: String {
         switch self {
-        case .gemma4_31b:  return "mlx-community/gemma-4-31b-it-4bit"
-        case .gemma3_12b:  return "mlx-community/gemma-3-12b-it-4bit"
-        case .gemma3_4b:   return "mlx-community/gemma-3-4b-it-4bit"
-        case .qwen25vl_7b: return "mlx-community/Qwen2.5-VL-7B-Instruct-4bit"
+        case .gemma4_31b:        return "mlx-community/gemma-4-31b-it-4bit"
+        case .gemma3_12b:        return "mlx-community/gemma-3-12b-it-4bit"
+        case .gemma3_4b:         return "mlx-community/gemma-3-4b-it-4bit"
+        case .llama32vision_11b: return "mlx-community/Llama-3.2-11B-Vision-Instruct-4bit"
         }
     }
 
@@ -39,28 +39,28 @@ enum GemmaModel: String, CaseIterable, Identifiable, Sendable {
     // so we don't trigger a re-download for an already-installed model.
     var localCachePath: String {
         switch self {
-        case .gemma4_31b:  return "~/.cache/gemma-4-31b-dense-4bit-mlx"
-        case .gemma3_12b:  return "~/.cache/gemma-3-12b-it-4bit"
-        case .gemma3_4b:   return "~/.cache/gemma-3-4b-it-4bit"
-        case .qwen25vl_7b: return "~/.cache/Qwen2.5-VL-7B-Instruct-4bit"
+        case .gemma4_31b:        return "~/.cache/gemma-4-31b-dense-4bit-mlx"
+        case .gemma3_12b:        return "~/.cache/gemma-3-12b-it-4bit"
+        case .gemma3_4b:         return "~/.cache/gemma-3-4b-it-4bit"
+        case .llama32vision_11b: return "~/.cache/Llama-3.2-11B-Vision-Instruct-4bit"
         }
     }
 
     var approxSizeGB: Double {
         switch self {
-        case .gemma4_31b:  return 17
-        case .gemma3_12b:  return 7.5
-        case .gemma3_4b:   return 3.2
-        case .qwen25vl_7b: return 5
+        case .gemma4_31b:        return 17
+        case .gemma3_12b:        return 7.5
+        case .gemma3_4b:         return 3.2
+        case .llama32vision_11b: return 5.6
         }
     }
 
     var blurb: String {
         switch self {
-        case .gemma4_31b:  return "Original. Strongest on long-tail species."
-        case .gemma3_12b:  return "Default. Half the memory of 31B with comparable accuracy on common species."
-        case .gemma3_4b:   return "Lightest. Fastest. Weaker on rare species."
-        case .qwen25vl_7b: return "Alternative VLM family. Strong general instruction following."
+        case .gemma4_31b:        return "Original. Strongest on long-tail species."
+        case .gemma3_12b:        return "Default. Half the memory of 31B with comparable accuracy on common species."
+        case .gemma3_4b:         return "Lightest. Fastest. Weaker on rare species."
+        case .llama32vision_11b: return "Different VLM family (Meta). Slower per photo; useful as a second opinion."
         }
     }
 
@@ -153,6 +153,22 @@ actor GemmaModelDownloader {
 
         if !model.isInstalled {
             throw DownloadError.failed(message: "Model files missing after download.")
+        }
+    }
+
+    // Removes the on-disk weights for `model`. The enum entry stays, so the
+    // picker still shows the option and a future Save will re-download.
+    // Caller is responsible for shutting down any subprocess that has the
+    // weights memory-mapped before invoking this.
+    func delete(_ model: GemmaModel) throws {
+        let dir = NSString(string: model.localCachePath).expandingTildeInPath
+        let url = URL(fileURLWithPath: dir)
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: url.path) else { return }
+        do {
+            try fm.removeItem(at: url)
+        } catch {
+            throw DownloadError.failed(message: error.localizedDescription)
         }
     }
 }

@@ -128,6 +128,9 @@ def validate_output(data: dict) -> None:
             raise ValueError(f"Missing required field: {field}")
 
     kingdom = (data.get("kingdom") or "").lower()
+    # Some VLMs emit the plural "fungi" — accept it as an alias.
+    if kingdom == "fungi":
+        kingdom = "fungus"
     if kingdom not in VALID_KINGDOMS:
         raise ValueError(f"Invalid kingdom: {data.get('kingdom')!r}")
     data["kingdom"] = kingdom

@@ -19,6 +19,8 @@ struct IllustrationStyleSheet: View {
     @State private var isDownloading = false
     @State private var downloadingModel: GemmaModel? = nil
     @State private var modelError: String? = nil
+    @State private var pendingDelete: GemmaModel? = nil
+    @State private var deletingModel: GemmaModel? = nil
 
     private var savedModel: GemmaModel { GemmaModelStore.shared.selected }
     private var modelChanged: Bool { selectedModel != savedModel }
@@ -83,6 +85,32 @@ struct IllustrationStyleSheet: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Custom edits in this sheet will be replaced with the originals. Nothing is saved until you press Save.")
+        }
+        .confirmationDialog(
+            pendingDelete.map { "Delete \($0.displayName) files?" } ?? "Delete model files?",
+            isPresented: Binding(
+                get: { pendingDelete != nil },
+                set: { if !$0 { pendingDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete files", role: .destructive) {
+                if let model = pendingDelete {
+                    pendingDelete = nil
+                    Task { await performDelete(model) }
+                }
+            }
+            Button("Cancel", role: .cancel) { pendingDelete = nil }
+        } message: {
+            if let m = pendingDelete {
+                let isActive = m == GemmaModelStore.shared.selected
+                let activeNote = isActive
+                    ? " It is your current model, so the next identification will trigger a re-download."
+                    : ""
+                Text("Frees ~\(formatGB(m.approxSizeGB)) of disk. The model stays in this list and can be re-downloaded later.\(activeNote)")
+            } else {
+                Text("")
+            }
         }
     }
 
@@ -199,37 +227,76 @@ struct IllustrationStyleSheet: View {
     private func modelRow(_ option: GemmaModel) -> some View {
         let isSelected = selectedModel == option
         let installed = option.isInstalled
-        let isDefault = option == .gemma3_12b
-        Button(action: { selectedModel = option }) {
-            HStack(spacing: 14) {
-                radioGlyph(isSelected: isSelected)
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 8) {
-                        Text(option.displayName)
-                            .font(DS.sans(13, weight: isSelected ? .semibold : .medium))
-                            .foregroundColor(DS.ink)
-                        if isDefault {
-                            MonoLabel(text: "DEFAULT", size: 9, color: DS.muted)
-                        }
-                        if installed {
-                            MonoLabel(text: "INSTALLED", size: 9, color: DS.sage)
-                        } else {
-                            MonoLabel(text: "DOWNLOAD ~\(formatGB(option.approxSizeGB))", size: 9, color: DS.amber)
-                        }
-                    }
-                    Text(option.blurb)
-                        .font(DS.sans(11.5))
-                        .foregroundColor(DS.inkSoft)
-                        .lineLimit(2)
-                }
-                Spacer()
+        HStack(spacing: 0) {
+            Button(action: { selectedModel = option }) {
+                modelRowContent(option, isSelected: isSelected, installed: installed)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .contentShape(Rectangle())
-            .background(isSelected ? DS.paper : Color.clear)
+            .buttonStyle(.plain)
+
+            modelRowTrailing(option, installed: installed)
         }
-        .buttonStyle(.plain)
+        .background(isSelected ? DS.paper : Color.clear)
+    }
+
+    @ViewBuilder
+    private func modelRowContent(_ option: GemmaModel, isSelected: Bool, installed: Bool) -> some View {
+        let isDefault = option == .gemma3_12b
+        HStack(spacing: 14) {
+            radioGlyph(isSelected: isSelected)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text(option.displayName)
+                        .font(DS.sans(13, weight: isSelected ? .semibold : .medium))
+                        .foregroundColor(DS.ink)
+                    if isDefault {
+                        MonoLabel(text: "DEFAULT", size: 9, color: DS.muted)
+                    }
+                    if installed {
+                        MonoLabel(text: "INSTALLED", size: 9, color: DS.sage)
+                    } else {
+                        MonoLabel(text: "~\(formatGB(option.approxSizeGB))", size: 9, color: DS.amber)
+                    }
+                }
+                Text(option.blurb)
+                    .font(DS.sans(11.5))
+                    .foregroundColor(DS.inkSoft)
+                    .lineLimit(2)
+            }
+            Spacer()
+        }
+        .padding(.leading, 14)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private func modelRowTrailing(_ option: GemmaModel, installed: Bool) -> some View {
+        if installed {
+            let isBusy = deletingModel == option
+            Button(action: { pendingDelete = option }) {
+                Text(isBusy ? "DELETING…" : "DELETE")
+                    .font(DS.mono(9.5, weight: .regular))
+                    .foregroundColor(DS.rust)
+                    .tracking(0.4)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isBusy)
+        } else {
+            Button(action: { Task { await performDownload(option) } }) {
+                Text("DOWNLOAD")
+                    .font(DS.mono(9.5, weight: .regular))
+                    .foregroundColor(DS.amber)
+                    .tracking(0.4)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isDownloading)
+        }
     }
 
     private func radioGlyph(isSelected: Bool) -> some View {
@@ -293,6 +360,48 @@ struct IllustrationStyleSheet: View {
     }
 
     // MARK: - Logic
+
+    private func performDownload(_ model: GemmaModel) async {
+        await MainActor.run {
+            downloadingModel = model
+            isDownloading = true
+            modelError = nil
+        }
+        do {
+            try await GemmaModelDownloader.shared.download(model)
+            await MainActor.run {
+                isDownloading = false
+                downloadingModel = nil
+            }
+        } catch {
+            await MainActor.run {
+                isDownloading = false
+                downloadingModel = nil
+                modelError = error.localizedDescription
+            }
+        }
+    }
+
+    private func performDelete(_ model: GemmaModel) async {
+        await MainActor.run {
+            deletingModel = model
+            modelError = nil
+        }
+        // If the model being deleted is the one currently loaded in the
+        // subprocess, shut it down first so file handles release before unlink.
+        if model == GemmaModelStore.shared.selected {
+            await GemmaActor.shared.shutdown()
+        }
+        do {
+            try await GemmaModelDownloader.shared.delete(model)
+            await MainActor.run { deletingModel = nil }
+        } catch {
+            await MainActor.run {
+                deletingModel = nil
+                modelError = error.localizedDescription
+            }
+        }
+    }
 
     private func loadDrafts() {
         for kingdom in allKingdoms {
