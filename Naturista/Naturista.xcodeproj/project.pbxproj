@@ -17,6 +17,7 @@
 		6C61578CB133CF9A594F6B2C /* PlateCompositor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C80FEE2509F98204617501E /* PlateCompositor.swift */; };
 		6E6C8F3F950AF9C07C6E8B45 /* IllustrationStyleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CF94C79E3BCCF304A52A8BC /* IllustrationStyleSheet.swift */; };
 		7176A18571C50BA96CFA2C9C /* Entry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11AFF4097CF8FA255A915845 /* Entry.swift */; };
+		75016E2CD1160953B2AFA764 /* SystemCapability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E7E03636E3189067354BDF7 /* SystemCapability.swift */; };
 		7C64DEEF0FAD89393A62A278 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B967B310FF31D71376E434A8 /* ContentView.swift */; };
 		8242276B42F097DCA56CE494 /* IllustrationPrompts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21D0FCAD537F5E6560D338A7 /* IllustrationPrompts.swift */; };
 		84922FADB6D9A699E156A923 /* FluxActor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57FDE4D6B25BDAE739421AAC /* FluxActor.swift */; };
@@ -45,6 +46,7 @@
 		11AFF4097CF8FA255A915845 /* Entry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Entry.swift; sourceTree = "<group>"; };
 		21D0FCAD537F5E6560D338A7 /* IllustrationPrompts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IllustrationPrompts.swift; sourceTree = "<group>"; };
 		325628BEE263E4D9F645EC4E /* ImportFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportFlowView.swift; sourceTree = "<group>"; };
+		3E7E03636E3189067354BDF7 /* SystemCapability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemCapability.swift; sourceTree = "<group>"; };
 		3F3DDF8BBC226266CE81F052 /* EntryDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntryDetailView.swift; sourceTree = "<group>"; };
 		41946F89622E52C94B9BEE70 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		49B09FCD21D5C47D38C0D166 /* PythonRPCTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PythonRPCTransport.swift; sourceTree = "<group>"; };
@@ -122,6 +124,7 @@
 				F44BA4A03F99571A3022B990 /* ImageService.swift */,
 				EE77B46A031D569A91996054 /* PhotoImportService.swift */,
 				094559EF8E72A8C8F42F2CDB /* PipelineService.swift */,
+				3E7E03636E3189067354BDF7 /* SystemCapability.swift */,
 				F119C60815B030A3E465D4DE /* ThumbnailBackfillService.swift */,
 			);
 			path = Services;
@@ -287,6 +290,7 @@
 				6C61578CB133CF9A594F6B2C /* PlateCompositor.swift in Sources */,
 				BE1B495B9B8A25D2C0654CEF /* PlateFrameView.swift in Sources */,
 				AFA351B4AA28BADE54A0BDAE /* PythonRPCTransport.swift in Sources */,
+				75016E2CD1160953B2AFA764 /* SystemCapability.swift in Sources */,
 				AE2B1406DF1495A32DBC7A83 /* ThumbnailBackfillService.swift in Sources */,
 				FA7C9E798ABC95F3B4958D40 /* main.swift in Sources */,
 			);

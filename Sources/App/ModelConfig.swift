@@ -72,6 +72,70 @@ enum GemmaModel: String, CaseIterable, Identifiable, Sendable {
         guard let contents = try? fm.contentsOfDirectory(atPath: url.path) else { return false }
         return contents.contains(where: { $0.hasSuffix(".safetensors") })
     }
+
+    // RAM/disk floors per model. ModelLease guarantees Gemma and FLUX are
+    // never resident simultaneously, so these reflect each model loaded
+    // alone. Min = "will probably load," Recommended = "will run smoothly."
+    var requirements: ModelRequirements {
+        switch self {
+        case .gemma3_4b:         return ModelRequirements(minRAMGB: 8,  recommendedRAMGB: 16, minDiskGB: 5)
+        case .gemma3_12b:        return ModelRequirements(minRAMGB: 16, recommendedRAMGB: 24, minDiskGB: 10)
+        case .llama32vision_11b: return ModelRequirements(minRAMGB: 16, recommendedRAMGB: 24, minDiskGB: 8)
+        case .gemma4_31b:        return ModelRequirements(minRAMGB: 24, recommendedRAMGB: 36, minDiskGB: 20)
+        }
+    }
+
+    func compatibility(on capability: SystemCapability = .current) -> ModelCompatibility {
+        if !capability.isAppleSilicon {
+            return .incompatible(reason: "Requires Apple Silicon. This Mac reports \(capability.chipModel).")
+        }
+        let req = requirements
+        let ram = capability.physicalMemoryGB
+        let ramRounded = Int(ram.rounded())
+        if ram < req.minRAMGB - 0.5 {
+            return .incompatible(
+                reason: "Needs \(formatGB(req.minRAMGB)) RAM. This Mac has \(ramRounded) GB."
+            )
+        }
+        if ram < req.recommendedRAMGB - 0.5 {
+            return .marginal(
+                reason: "May be slow on \(ramRounded) GB. \(formatGB(req.recommendedRAMGB)) recommended."
+            )
+        }
+        return .compatible
+    }
+
+    private func formatGB(_ gb: Double) -> String {
+        gb.truncatingRemainder(dividingBy: 1) == 0
+            ? "\(Int(gb)) GB"
+            : String(format: "%.1f GB", gb)
+    }
+}
+
+struct ModelRequirements {
+    let minRAMGB: Double
+    let recommendedRAMGB: Double
+    let minDiskGB: Double
+}
+
+enum ModelCompatibility: Equatable {
+    case compatible
+    case marginal(reason: String)
+    case incompatible(reason: String)
+
+    var isSelectable: Bool {
+        switch self {
+        case .compatible, .marginal: return true
+        case .incompatible: return false
+        }
+    }
+
+    var reason: String? {
+        switch self {
+        case .compatible: return nil
+        case .marginal(let r), .incompatible(let r): return r
+        }
+    }
 }
 
 // User's chosen identification model. UserDefaults-backed.
@@ -103,12 +167,18 @@ final class GemmaModelStore: @unchecked Sendable {
 actor GemmaModelDownloader {
     enum DownloadError: Error, LocalizedError {
         case hfNotFound(path: String)
+        case insufficientDisk(neededGB: Double, availableGB: Double)
         case failed(message: String)
 
         var errorDescription: String? {
             switch self {
             case .hfNotFound(let p):
                 return "huggingface-cli not found at \(p). Install the Naturista Python environment first."
+            case .insufficientDisk(let needed, let available):
+                return String(
+                    format: "Not enough free disk: needs %.0f GB, only %.1f GB available.",
+                    needed, available
+                )
             case .failed(let m):
                 return "Download failed: \(m)"
             }
@@ -126,6 +196,18 @@ actor GemmaModelDownloader {
         }
 
         let localDir = NSString(string: model.localCachePath).expandingTildeInPath
+
+        // Refuse before launching hf if the volume can't hold the weights —
+        // hf would otherwise fill the disk and surface a confusing error
+        // mid-download. We probe the parent so the check works even if the
+        // localDir doesn't exist yet.
+        let targetURL = URL(fileURLWithPath: localDir)
+        if let availableGB = SystemCapability.current.availableDiskGB(at: targetURL) {
+            let needed = model.requirements.minDiskGB
+            if availableGB < needed {
+                throw DownloadError.insufficientDisk(neededGB: needed, availableGB: availableGB)
+            }
+        }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: hfPath)

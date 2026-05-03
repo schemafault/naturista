@@ -239,7 +239,7 @@ struct LibraryView: View {
         switch activeFilter {
         case .recent: return "Recent"
         case .pinned: return "Pinned"
-        case .all:    return "Field journal"
+        case .all:    return "My journal"
         }
     }
 
@@ -338,7 +338,7 @@ struct LibraryView: View {
         VStack(spacing: 12) {
             Spacer(minLength: 60)
             Eyebrow(text: "Library")
-            Text("Begin a field journal")
+            Text("Begin a journal")
                 .font(DS.serif(28))
                 .foregroundColor(DS.ink)
             Text("Import a photograph and the local model will draft your first plate.")
@@ -410,7 +410,7 @@ struct LibraryView: View {
     }
 
     private func updateWindowTitle() {
-        let title = "Naturista — Field Journal"
+        let title = "Naturista — My Journal"
         NSApp.windows.first?.title = title
     }
 }

@@ -227,19 +227,25 @@ struct IllustrationStyleSheet: View {
     private func modelRow(_ option: GemmaModel) -> some View {
         let isSelected = selectedModel == option
         let installed = option.isInstalled
+        let compat = option.compatibility()
         HStack(spacing: 0) {
-            Button(action: { selectedModel = option }) {
-                modelRowContent(option, isSelected: isSelected, installed: installed)
+            Button(action: {
+                guard compat.isSelectable else { return }
+                selectedModel = option
+            }) {
+                modelRowContent(option, isSelected: isSelected, installed: installed, compat: compat)
             }
             .buttonStyle(.plain)
+            .disabled(!compat.isSelectable)
 
-            modelRowTrailing(option, installed: installed)
+            modelRowTrailing(option, installed: installed, compat: compat)
         }
         .background(isSelected ? DS.paper : Color.clear)
+        .opacity(compat.isSelectable ? 1.0 : 0.55)
     }
 
     @ViewBuilder
-    private func modelRowContent(_ option: GemmaModel, isSelected: Bool, installed: Bool) -> some View {
+    private func modelRowContent(_ option: GemmaModel, isSelected: Bool, installed: Bool, compat: ModelCompatibility) -> some View {
         let isDefault = option == .gemma3_12b
         HStack(spacing: 14) {
             radioGlyph(isSelected: isSelected)
@@ -256,11 +262,18 @@ struct IllustrationStyleSheet: View {
                     } else {
                         MonoLabel(text: "~\(formatGB(option.approxSizeGB))", size: 9, color: DS.amber)
                     }
+                    compatibilityBadge(compat)
                 }
                 Text(option.blurb)
                     .font(DS.sans(11.5))
                     .foregroundColor(DS.inkSoft)
                     .lineLimit(2)
+                if let reason = compat.reason {
+                    Text(reason)
+                        .font(DS.sans(11))
+                        .foregroundColor(compat.isSelectable ? DS.amber : DS.rust)
+                        .lineLimit(2)
+                }
             }
             Spacer()
         }
@@ -270,7 +283,19 @@ struct IllustrationStyleSheet: View {
     }
 
     @ViewBuilder
-    private func modelRowTrailing(_ option: GemmaModel, installed: Bool) -> some View {
+    private func compatibilityBadge(_ compat: ModelCompatibility) -> some View {
+        switch compat {
+        case .compatible:
+            EmptyView()
+        case .marginal:
+            MonoLabel(text: "MAY BE SLOW", size: 9, color: DS.amber)
+        case .incompatible:
+            MonoLabel(text: "INCOMPATIBLE", size: 9, color: DS.rust)
+        }
+    }
+
+    @ViewBuilder
+    private func modelRowTrailing(_ option: GemmaModel, installed: Bool, compat: ModelCompatibility) -> some View {
         if installed {
             let isBusy = deletingModel == option
             Button(action: { pendingDelete = option }) {
@@ -288,14 +313,14 @@ struct IllustrationStyleSheet: View {
             Button(action: { Task { await performDownload(option) } }) {
                 Text("DOWNLOAD")
                     .font(DS.mono(9.5, weight: .regular))
-                    .foregroundColor(DS.amber)
+                    .foregroundColor(compat.isSelectable ? DS.amber : DS.muted)
                     .tracking(0.4)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(isDownloading)
+            .disabled(isDownloading || !compat.isSelectable)
         }
     }
 
