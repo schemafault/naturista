@@ -193,7 +193,7 @@ struct ImportFlowView: View {
             Text("Composing the plate")
                 .font(DS.serif(26))
                 .foregroundColor(DS.ink)
-            Text("The illustration is being drawn and arranged within the herbarium frame.")
+            Text("The illustration is being drawn and arranged within the plate frame.")
                 .font(DS.sans(13))
                 .foregroundColor(DS.inkSoft)
                 .frame(maxWidth: 540, alignment: .leading)

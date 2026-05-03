@@ -550,11 +550,12 @@ private struct PaginationBar: View {
 
 // MARK: - Right-click menu
 
-// Catches right-clicks on the host SwiftUI view and reports them so the
-// caller can present a custom popover. AppKit's NSMenu won't take SwiftUI
-// styling, so we render the menu as a SwiftUI popover instead.
+// Catches right-clicks on the host SwiftUI view and reports them with the
+// click location in the view's local (top-left origin) coordinate space.
+// AppKit's NSMenu won't take SwiftUI styling, so the caller renders the
+// menu as a SwiftUI popover anchored at the click point.
 private struct RightClickCatcher: NSViewRepresentable {
-    var onRightClick: () -> Void
+    var onRightClick: (CGPoint) -> Void
 
     func makeNSView(context: Context) -> CatcherView {
         let v = CatcherView()
@@ -567,7 +568,10 @@ private struct RightClickCatcher: NSViewRepresentable {
     }
 
     final class CatcherView: NSView {
-        var handler: (() -> Void)?
+        var handler: ((CGPoint) -> Void)?
+        // Match SwiftUI's top-left origin so the reported point can be
+        // fed straight into .position() without a y-flip.
+        override var isFlipped: Bool { true }
         override func hitTest(_ point: NSPoint) -> NSView? {
             // Only intercept right-clicks; let normal taps fall through to
             // SwiftUI underneath.
@@ -580,7 +584,8 @@ private struct RightClickCatcher: NSViewRepresentable {
             }
         }
         override func rightMouseDown(with event: NSEvent) {
-            handler?()
+            let local = convert(event.locationInWindow, from: nil)
+            handler?(CGPoint(x: local.x, y: local.y))
         }
     }
 }
@@ -592,14 +597,34 @@ private struct EntryContextMenuModifier: ViewModifier {
     var onTogglePin: (Entry) -> Void
 
     @State private var presented = false
+    @State private var anchor: UnitPoint = .center
+    @State private var tileSize: CGSize = .zero
 
     func body(content: Content) -> some View {
         content
-            .overlay(
-                RightClickCatcher { presented = true }
-                    .allowsHitTesting(true)
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { tileSize = geo.size }
+                        .onChange(of: geo.size) { _, new in tileSize = new }
+                }
             )
-            .popover(isPresented: $presented, arrowEdge: .top) {
+            .overlay(
+                RightClickCatcher { point in
+                    if tileSize.width > 0, tileSize.height > 0 {
+                        anchor = UnitPoint(
+                            x: max(0, min(1, point.x / tileSize.width)),
+                            y: max(0, min(1, point.y / tileSize.height))
+                        )
+                    }
+                    presented = true
+                }
+            )
+            .popover(
+                isPresented: $presented,
+                attachmentAnchor: .point(anchor),
+                arrowEdge: .top
+            ) {
                 EntryContextMenuView(
                     entry: entry,
                     onRegenerate: { presented = false; onRegenerate(entry) },
