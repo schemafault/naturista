@@ -171,19 +171,17 @@ final class GemmaModelStore: @unchecked Sendable {
     }
 }
 
-// Shells out to the naturista-venv hf CLI to fetch MLX weights. The hf binary
-// lives in the same venv that hosts mlx-vlm, so a successful run leaves the
-// model where Python's loader expects it.
+// Fetches MLX weights from Hugging Face directly via URLSession. No Python
+// venv / hf CLI subprocess — sandbox-eligible, and the only entitlement
+// needed is com.apple.security.network.client. Files land where Python's
+// loader expects them.
 actor GemmaModelDownloader {
     enum DownloadError: Error, LocalizedError {
-        case hfNotFound(path: String)
         case insufficientDisk(neededGB: Double, availableGB: Double)
         case failed(message: String)
 
         var errorDescription: String? {
             switch self {
-            case .hfNotFound(let p):
-                return "huggingface-cli not found at \(p). Install the Naturista Python environment first."
             case .insufficientDisk(let needed, let available):
                 return String(
                     format: "Not enough free disk: needs %.0f GB, only %.1f GB available.",
@@ -200,47 +198,18 @@ actor GemmaModelDownloader {
     func download(_ model: GemmaModel) async throws {
         if model.isInstalled { return }
 
-        let hfPath = NSString(string: "~/.cache/naturista-venv/bin/hf").expandingTildeInPath
-        guard FileManager.default.fileExists(atPath: hfPath) else {
-            throw DownloadError.hfNotFound(path: hfPath)
-        }
-
-        let localDir = NSString(string: model.localCachePath).expandingTildeInPath
-
-        // Refuse before launching hf if the volume can't hold the weights —
-        // hf would otherwise fill the disk and surface a confusing error
-        // mid-download. We probe the parent so the check works even if the
-        // localDir doesn't exist yet.
-        let targetURL = URL(fileURLWithPath: localDir)
-        if let availableGB = SystemCapability.current.availableDiskGB(at: targetURL) {
-            let needed = model.requirements.minDiskGB
-            if availableGB < needed {
-                throw DownloadError.insufficientDisk(neededGB: needed, availableGB: availableGB)
-            }
-        }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: hfPath)
-        process.arguments = ["download", model.hfRepo, "--local-dir", localDir]
-
-        let stderr = Pipe()
-        process.standardError = stderr
-        process.standardOutput = Pipe()
+        let target = URL(fileURLWithPath: model.localCachePath)
 
         do {
-            try process.run()
+            try await HuggingFaceDownloader().download(
+                repo: model.hfRepo,
+                into: target,
+                minDiskGB: model.requirements.minDiskGB
+            )
+        } catch let HuggingFaceDownloader.Error.insufficientDisk(needed, available) {
+            throw DownloadError.insufficientDisk(neededGB: needed, availableGB: available)
         } catch {
             throw DownloadError.failed(message: error.localizedDescription)
-        }
-
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            process.terminationHandler = { _ in cont.resume() }
-        }
-
-        if process.terminationStatus != 0 {
-            let errOut = (try? stderr.fileHandleForReading.readToEnd()) ?? Data()
-            let raw = String(data: errOut, encoding: .utf8) ?? "exit \(process.terminationStatus)"
-            throw DownloadError.failed(message: String(raw.suffix(400)))
         }
 
         if !model.isInstalled {
@@ -329,6 +298,161 @@ enum AppPaths {
                 try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
             }
         }
+    }
+}
+
+// MARK: - Hugging Face downloader
+//
+// Mirrors a public HF repo's `main` branch into a target directory using
+// URLSession. No subprocess, no Python. Intended for MLX weight repos
+// (mlx-community/...) which are unauthenticated.
+//
+// - Uses HF's tree API with `recursive=true` to list every file.
+// - Bounded concurrency (default 4) — matches what hf CLI does.
+// - Resume across runs: an already-present file at the final path is
+//   skipped; an interrupted download leaves a `<file>.partial` that gets
+//   replaced on the next attempt.
+// - Disk precheck up front so a 17 GB download doesn't fail halfway through.
+struct HuggingFaceDownloader {
+    enum Error: Swift.Error, LocalizedError {
+        case insufficientDisk(neededGB: Double, availableGB: Double)
+        case treeListFailed(repo: String, status: Int)
+        case downloadFailed(file: String, status: Int)
+        case ioFailure(file: String, underlying: Swift.Error)
+
+        var errorDescription: String? {
+            switch self {
+            case .insufficientDisk(let needed, let available):
+                return String(format: "Not enough free disk: needs %.0f GB, only %.1f GB available.", needed, available)
+            case .treeListFailed(let repo, let status):
+                return "Failed to list repo \(repo): HTTP \(status)."
+            case .downloadFailed(let file, let status):
+                return "Failed to download \(file): HTTP \(status)."
+            case .ioFailure(let file, let underlying):
+                return "I/O error writing \(file): \(underlying.localizedDescription)"
+            }
+        }
+    }
+
+    private struct TreeEntry: Decodable {
+        let path: String
+        let type: String   // "file" | "directory"
+    }
+
+    let session: URLSession
+    let maxConcurrent: Int
+
+    init(session: URLSession = .shared, maxConcurrent: Int = 4) {
+        self.session = session
+        self.maxConcurrent = maxConcurrent
+    }
+
+    func download(
+        repo: String,
+        into directory: URL,
+        minDiskGB: Double = 0,
+        progress: (@Sendable (_ filesDone: Int, _ filesTotal: Int) -> Void)? = nil
+    ) async throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        if minDiskGB > 0,
+           let availableGB = SystemCapability.current.availableDiskGB(at: directory),
+           availableGB < minDiskGB {
+            throw Error.insufficientDisk(neededGB: minDiskGB, availableGB: availableGB)
+        }
+
+        let entries = try await listTree(repo: repo)
+        let files = entries.filter { $0.type == "file" }.map(\.path)
+
+        let counter = DownloadCounter(total: files.count, progress: progress)
+        await counter.report()
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            var iterator = files.makeIterator()
+            // Seed up to maxConcurrent.
+            for _ in 0..<maxConcurrent {
+                guard let next = iterator.next() else { break }
+                group.addTask {
+                    try await fetchFile(repo: repo, path: next, into: directory)
+                }
+            }
+            // As each finishes, enqueue the next.
+            while try await group.next() != nil {
+                await counter.increment()
+                if let next = iterator.next() {
+                    group.addTask {
+                        try await fetchFile(repo: repo, path: next, into: directory)
+                    }
+                }
+            }
+        }
+    }
+
+    private func listTree(repo: String) async throws -> [TreeEntry] {
+        var components = URLComponents(string: "https://huggingface.co/api/models/\(repo)/tree/main")!
+        components.queryItems = [URLQueryItem(name: "recursive", value: "true")]
+        let url = components.url!
+
+        let (data, response) = try await session.data(from: url)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+        guard (200..<300).contains(status) else {
+            throw Error.treeListFailed(repo: repo, status: status)
+        }
+        return try JSONDecoder().decode([TreeEntry].self, from: data)
+    }
+
+    private func fetchFile(repo: String, path: String, into directory: URL) async throws {
+        let target = directory.appendingPathComponent(path)
+        let parent = target.deletingLastPathComponent()
+        let fm = FileManager.default
+        try fm.createDirectory(at: parent, withIntermediateDirectories: true)
+
+        // Resume: skip files we already have. Lets a re-run after Cmd-Q
+        // pick up where it left off without re-downloading 12 GB.
+        if fm.fileExists(atPath: target.path) { return }
+
+        let url = URL(string: "https://huggingface.co/\(repo)/resolve/main/\(path)")!
+        let (tmpURL, response) = try await session.download(from: url)
+        defer { try? fm.removeItem(at: tmpURL) }
+
+        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+        guard (200..<300).contains(status) else {
+            throw Error.downloadFailed(file: path, status: status)
+        }
+
+        // Two-step rename: tmp → <name>.partial → <name>. Quarantines a
+        // half-written file across crashes so a future run can detect it.
+        let partial = target.appendingPathExtension("partial")
+        if fm.fileExists(atPath: partial.path) {
+            try? fm.removeItem(at: partial)
+        }
+        do {
+            try fm.moveItem(at: tmpURL, to: partial)
+            try fm.moveItem(at: partial, to: target)
+        } catch {
+            throw Error.ioFailure(file: path, underlying: error)
+        }
+    }
+}
+
+// Actor purely so the progress callback fires on a stable executor and we
+// don't tear up the value-type Downloader with mutable state.
+private actor DownloadCounter {
+    private var done: Int = 0
+    private let total: Int
+    private let progress: (@Sendable (Int, Int) -> Void)?
+
+    init(total: Int, progress: (@Sendable (Int, Int) -> Void)?) {
+        self.total = total
+        self.progress = progress
+    }
+
+    func report() { progress?(done, total) }
+
+    func increment() {
+        done += 1
+        progress?(done, total)
     }
 }
 

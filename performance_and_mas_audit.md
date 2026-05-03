@@ -100,17 +100,13 @@ Also add a pre-download `volumeAvailableCapacity` check to `GemmaModelDownloader
 
 (Open question for follow-up: with thumbnails + LazyVGrid, pagination may be unnecessary. Worth A/B-ing scroll feel.)
 
-### 4. Move models from `~/.cache/` to `~/Library/Application Support/Naturista/Models/` — Effort: M (1–2 days)
+### 4. Move models from `~/.cache/` to `~/Library/Application Support/Naturista/models/` — Effort: M (1–2 days) — DONE (mac-appy)
 
-**Why now (regardless of MAS).** `~/.cache/` is purgeable by macOS — users can lose 17GB of weights to "Free up storage" prompts and not know why the app stopped working. Also a prerequisite for any MAS path.
-
-- `AppPaths.models` is already defined at `Sources/App/ModelConfig.swift:217`. Switch the model-path resolution to use it.
-- One-shot migration on launch: if old `~/.cache/<modelDir>` exists and new path doesn't, `mv` the directory; flag completion in `UserDefaults`.
-- Update `GemmaModelDownloader` to write to the new location.
+Status: shipped on `mac-appy`. `GemmaModel.localCachePath` now derives from `AppPaths.models.appendingPathComponent(directoryName)`; `legacyCachePath` retained for the migrator. New `AppPaths.fluxModel` URL; `FluxActor` injects `FLUX_MODEL_PATH` env so the Python flux service finds weights at the new location. `ModelStorageMigrator.migrateIfNeeded()` (inlined in `ModelConfig.swift`, called from `AppDelegate.applicationDidFinishLaunching` before any actor spins up) moves all 5 known model dirs (4 Gemma variants + FLUX) on launch, idempotent via UserDefaults flag `models.migratedToAppSupport.v1`. Verified end-to-end on this machine: ~30 GB across 5 dirs migrated successfully.
 
 ### 5. Strategic decision: MAS path
 
-This is a **decision**, not code. Make it before investing further in MAS-specific work. See next section.
+Spike done — see Option B below. Tentative decision: **Option B**. Prep work for B has begun on `mac-appy` (items 4 above + MAS-blocking remediation rows 2-3 below). Confirm before starting the multi-week native port.
 
 ---
 
@@ -139,6 +135,16 @@ Replace Python subprocess with in-process Swift via [mlx-swift](https://github.c
 
 **Recommendation: 1-day MLX-Swift FLUX spike.** Prove `FLUX.1-schnell-mlx` runs end-to-end at acceptable quality/latency. If yes → commit to Option B over 6–8 weeks. If no → Option C.
 
+**Spike result — DONE (`flux2_swift_spike/`).** Used [VincentGourbin/flux-2-swift-mlx](https://github.com/VincentGourbin/flux-2-swift-mlx) v2.1.0 (`Flux2Core` library, FLUX.2 Klein 4B int4 — same model + quantization + steps/guidance/dims as the current Python pipeline) on M4 Pro / 48 GB. Steady-state, 3 timed gens after warmup:
+
+| Metric | Python (mflux) | Swift (mlx-swift) | Swift / Python |
+|---|---|---|---|
+| Best of 3 (sec) | 27.30 | 30.75 | **1.13×** |
+| Median of 3 (sec) | 27.98 | 30.81 | **1.10×** |
+| Run-to-run spread (sec) | 3.93 | 0.06 | Swift is steadier |
+
+Verdict: Option B is technically viable. Swift is ~10% slower steady-state — comfortably inside the audit's 1.5× criterion — and more reliable run-to-run. Likely root cause of the gap: mflux uses pre-quantized 4-bit weights in a packed layout; flux-2-swift-mlx quantizes on-the-fly and the runtime layout doesn't always hit the fastest int4 matmul kernel. Same `Cmlx`/Metal compute under both. Gotcha discovered: any mlx-swift target must be built via `xcodebuild` (not `swift build`) — SwiftPM CLI doesn't compile the Metal shaders.
+
 ### Option C — Don't ship to MAS; stay Developer ID + notarization
 
 Current architecture works. Notarize, distribute via website + Sparkle.
@@ -155,12 +161,28 @@ Current architecture works. Notarize, distribute via website + Sparkle.
 
 These come AFTER the spike + decision. Item 4 above (move models out of `~/.cache/`) is shared.
 
-| Task | Files | Effort |
-|---|---|---|
-| Enable sandbox | `Naturista/Resources/Naturista.entitlements` | S |
-| Replace `/tmp/naturista_*.log` with `FileManager.default.temporaryDirectory` | `Sources/AI/GemmaActor.swift:85`, `Sources/AI/FluxActor.swift:33` | S |
-| Replace `hf` CLI with native Swift HuggingFace downloader (`URLSession`, parse `model.safetensors.index.json`, parallel downloads) | `Sources/App/ModelConfig.swift:120` | M |
-| Remove all subprocess spawning (Option B) OR bundle Python (Option A) | `Sources/AI/PythonRPCTransport.swift` | XL |
+| Task | Files | Effort | Status |
+|---|---|---|---|
+| Enable sandbox | `Naturista/Resources/Naturista.entitlements` | S | pending — depends on subprocess removal |
+| Replace `/tmp/naturista_*.log` with `FileManager.default.temporaryDirectory` | `Sources/AI/GemmaActor.swift:85`, `Sources/AI/FluxActor.swift:33` | S | ✅ DONE (mac-appy) |
+| Replace `hf` CLI with native Swift HuggingFace downloader (`URLSession`, parse `model.safetensors.index.json`, parallel downloads) | `Sources/App/ModelConfig.swift:120` | M | ✅ DONE (mac-appy) — `HuggingFaceDownloader` struct inlined in `ModelConfig.swift`; uses HF tree API + 4-way bounded concurrency + `.partial` rename for resume; `GemmaModelDownloader.download` rewritten to call it. **Untested end-to-end** because all 5 models are already on disk on the dev machine — first verification path is to delete a model via the picker UI and re-add it. |
+| Remove all subprocess spawning (Option B) OR bundle Python (Option A) | `Sources/AI/PythonRPCTransport.swift` | XL | **next** — see "Next session" below |
+
+---
+
+## Next session — entry point
+
+State of `mac-appy` branch (uncommitted as of this writeup):
+
+- **Done on this branch:** Item 4 (model storage migration), MAS rows 2 & 3 above (logs out of `/tmp`, native HF downloader). Plus the FLUX spike lives at `flux2_swift_spike/` (Swift Package, build with `xcodebuild -scheme FluxSpike ...`).
+- **Modified files:** `Sources/App/ModelConfig.swift`, `Sources/App/AppDelegate.swift`, `Sources/AI/FluxActor.swift`, `Sources/AI/GemmaActor.swift`, `.gitignore` (adds `xcbuild/`).
+- **Branch base:** forked from `fix/lease-eager-release-flux` carrying that branch's WIP forward (SystemCapability service, etc.). Not yet committed; commit before continuing if desired.
+- **Next concrete task:** start the native MLX-Swift port (Option B, XL effort, 6–8 weeks). Suggested phasing:
+  1. Port Gemma identification first (lower risk — `mlx-swift-examples` ships Gemma 3 + VLM). Replace `GemmaActor`'s `PythonProcessTransport` with an in-process `MLXLMCommon` pipeline. Ship as a feature flag.
+  2. Port FLUX second using `flux-2-swift-mlx`'s `Flux2Core` library (validated by the spike). Replace `FluxActor`'s transport.
+  3. Once both Actors are native, delete `PythonRPCTransport.swift`, the `Python/` deployment, and the venv requirement.
+  4. Enable sandbox + clean up entitlements (top row of the table).
+- **Spike-derived constraint to remember:** mlx-swift requires `xcodebuild` for Metal shader compilation; the existing Naturista Xcode project handles this automatically.
 
 ---
 
