@@ -19,10 +19,12 @@ struct LibraryView: View {
     @State private var activeFilter: CollectionFilter = .all
     @State private var showIllustrationStyle = false
 
-    // Recent = the 12 most-recently created entries.
-    private var recentIds: Set<String> {
-        Set(entries.prefix(12).map { $0.id })
-    }
+    // Memoized derived state. Recomputed only when `entries` changes,
+    // not on every body eval — at 5,000 entries the family counts loop
+    // and the recent-ids construction both dominated SwiftUI's diff
+    // budget on every keystroke / filter switch.
+    @State private var recentIds: Set<String> = []
+    @State private var familyCounts: [(String, Int)] = []
 
     private var filtered: [Entry] {
         entries.filter { e in
@@ -55,7 +57,12 @@ struct LibraryView: View {
         return Array(filtered[start..<end])
     }
 
-    private var familyCounts: [(String, Int)] {
+    private static func computeRecentIds(_ entries: [Entry]) -> Set<String> {
+        // Recent = the 12 most-recently created entries.
+        Set(entries.prefix(12).map { $0.id })
+    }
+
+    private static func computeFamilyCounts(_ entries: [Entry]) -> [(String, Int)] {
         var counts: [String: Int] = [:]
         for e in entries {
             guard let family = e.identification.family, !family.isEmpty else { continue }
@@ -377,6 +384,8 @@ struct LibraryView: View {
                 let fetched = try await DatabaseService.shared.fetchAllEntries()
                 await MainActor.run {
                     entries = fetched
+                    recentIds = Self.computeRecentIds(fetched)
+                    familyCounts = Self.computeFamilyCounts(fetched)
                     if let fam = activeFamily, !fetched.contains(where: { $0.identification.family == fam }) {
                         activeFamily = nil
                     }
@@ -510,6 +519,41 @@ private struct PaginationBar: View {
     let total: Int
     let onChange: (Int) -> Void
 
+    // Renders at most ~9 items regardless of total page count: first,
+    // last, current ± 2, with `…` separators where gaps exist. Same
+    // visual / interaction surface as the old "every page is a button"
+    // version, but `O(1)` views instead of `O(total)` — the audit's
+    // "5000 entries → 312 buttons" case.
+    private enum Item: Hashable {
+        case page(Int)
+        case ellipsis(id: Int)
+    }
+
+    private var items: [Item] {
+        guard total > 0 else { return [] }
+        var visible = Set<Int>()
+        visible.insert(0)
+        visible.insert(total - 1)
+        for offset in -2...2 {
+            let p = page + offset
+            if p >= 0 && p < total { visible.insert(p) }
+        }
+        let sorted = visible.sorted()
+
+        var result: [Item] = []
+        var ellipsisId = 0
+        var prev: Int? = nil
+        for p in sorted {
+            if let last = prev, p > last + 1 {
+                result.append(.ellipsis(id: ellipsisId))
+                ellipsisId += 1
+            }
+            result.append(.page(p))
+            prev = p
+        }
+        return result
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             Hairline()
@@ -517,13 +561,21 @@ private struct PaginationBar: View {
                 pageButton(label: "‹", width: 32, isActive: false, disabled: page == 0) {
                     onChange(page - 1)
                 }
-                ForEach(0..<total, id: \.self) { p in
-                    pageButton(
-                        label: String(format: "%02d", p + 1),
-                        width: 28,
-                        isActive: p == page,
-                        disabled: false
-                    ) { onChange(p) }
+                ForEach(items, id: \.self) { item in
+                    switch item {
+                    case .page(let p):
+                        pageButton(
+                            label: String(format: "%02d", p + 1),
+                            width: 28,
+                            isActive: p == page,
+                            disabled: false
+                        ) { onChange(p) }
+                    case .ellipsis:
+                        Text("…")
+                            .font(DS.mono(11))
+                            .foregroundColor(DS.muted)
+                            .frame(width: 18, height: 28)
+                    }
                 }
                 pageButton(label: "›", width: 32, isActive: false, disabled: page == total - 1) {
                     onChange(page + 1)
