@@ -22,9 +22,15 @@ struct EntryRowView: View {
                             .stroke(hovered ? DS.inkSoft : DS.hairlineSoft, lineWidth: 1)
                     )
 
-                MonoLabel(text: indexLabel)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
+                HStack(spacing: 10) {
+                    MonoLabel(text: indexLabel)
+                    Rectangle()
+                        .fill(DS.hairline)
+                        .frame(width: 1, height: 9)
+                    MonoLabel(text: entry.kingdom.displayLabel, color: DS.muted)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
             }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -157,5 +163,13 @@ extension Entry {
             return ""
         }
         return fam
+    }
+
+    var kingdom: Kingdom {
+        guard let data = self.identificationJson.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return .plant
+        }
+        return Kingdom.parse(json["kingdom"] as? String)
     }
 }

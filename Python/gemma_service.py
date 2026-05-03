@@ -14,10 +14,11 @@ from pathlib import Path
 DEFAULT_MODEL_PATH = os.path.expanduser("~/.cache/gemma-4-31b-dense-4bit-mlx")
 DEFAULT_MAX_TOKENS = 2048
 
-SYSTEM_PROMPT = """You are a botanical identification assistant. Analyze the provided image and identify the plant.
+SYSTEM_PROMPT = """You are a natural-history identification assistant. Analyze the provided image and identify the subject.
 
 Output ONLY valid JSON in this exact format, with no additional text:
 {
+  "kingdom": "plant | animal | fungus | other",
   "model_confidence": "high | medium | low",
   "top_candidate": {
     "common_name": "string",
@@ -33,10 +34,20 @@ Output ONLY valid JSON in this exact format, with no additional text:
   ],
   "visible_evidence": ["string"],
   "missing_evidence": ["string"],
-  "safety_note": "Do not consume or handle based only on this identification."
-}"""
+  "safety_note": "string"
+}
 
-USER_PROMPT = "Identify this plant. Provide your best assessment with supporting visual evidence."
+Rules for "kingdom":
+- "plant" for any vascular or non-vascular plant.
+- "animal" for any animal — mammal, bird, reptile, amphibian, fish, insect, mollusc, etc.
+- "fungus" for mushrooms, brackets, lichens, and other fungi.
+- "other" if the subject is not a living organism (a manufactured object, food, scenery without a clear subject). For "other" subjects, fill top_candidate.common_name with a brief description (e.g. "ham sandwich"); leave scientific_name and family as empty strings; set alternatives to [].
+
+Populate visible_evidence with the diagnostic features visible in the image — leaf shape and venation for plants; plumage, pelage, or distinctive markings for animals; cap shape and gill arrangement for fungi; salient details for "other" subjects.
+
+Tailor safety_note to the kingdom: warn against consumption for plants and fungi; warn against approaching or handling wildlife for animals; for "other" use a brief reference disclaimer."""
+
+USER_PROMPT = "Identify the subject of this image. Provide your best assessment with supporting visual evidence."
 FULL_PROMPT = f"{SYSTEM_PROMPT}\n\n{USER_PROMPT}"
 
 _model = None
@@ -106,12 +117,20 @@ def parse_json_output(raw_output: str) -> dict:
             raise ValueError(f"Failed to parse JSON output: {e}")
 
 
+VALID_KINGDOMS = ("plant", "animal", "fungus", "other")
+
+
 def validate_output(data: dict) -> None:
-    required_fields = ["model_confidence", "top_candidate", "alternatives",
+    required_fields = ["kingdom", "model_confidence", "top_candidate", "alternatives",
                        "visible_evidence", "missing_evidence", "safety_note"]
     for field in required_fields:
         if field not in data:
             raise ValueError(f"Missing required field: {field}")
+
+    kingdom = (data.get("kingdom") or "").lower()
+    if kingdom not in VALID_KINGDOMS:
+        raise ValueError(f"Invalid kingdom: {data.get('kingdom')!r}")
+    data["kingdom"] = kingdom
 
     if data["model_confidence"] not in ("high", "medium", "low"):
         raise ValueError(f"Invalid confidence value: {data['model_confidence']}")

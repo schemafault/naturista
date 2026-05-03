@@ -27,6 +27,7 @@ enum GemmaError: Error, LocalizedError {
 }
 
 struct IdentificationResult: Codable {
+    var kingdom: String
     var modelConfidence: String
     var topCandidate: TopCandidate
     var alternatives: [Alternative]
@@ -36,6 +37,7 @@ struct IdentificationResult: Codable {
     var error: String?
 
     enum CodingKeys: String, CodingKey {
+        case kingdom
         case modelConfidence = "model_confidence"
         case topCandidate = "top_candidate"
         case alternatives
@@ -43,6 +45,20 @@ struct IdentificationResult: Codable {
         case missingEvidence = "missing_evidence"
         case safetyNote = "safety_note"
         case error
+    }
+
+    // Legacy JSON (pre-multi-kingdom) has no `kingdom` key — default to plant
+    // so existing entries decode without migration.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.kingdom = (try c.decodeIfPresent(String.self, forKey: .kingdom)) ?? "plant"
+        self.modelConfidence = try c.decode(String.self, forKey: .modelConfidence)
+        self.topCandidate = try c.decode(TopCandidate.self, forKey: .topCandidate)
+        self.alternatives = (try c.decodeIfPresent([Alternative].self, forKey: .alternatives)) ?? []
+        self.visibleEvidence = (try c.decodeIfPresent([String].self, forKey: .visibleEvidence)) ?? []
+        self.missingEvidence = (try c.decodeIfPresent([String].self, forKey: .missingEvidence)) ?? []
+        self.safetyNote = (try c.decodeIfPresent(String.self, forKey: .safetyNote)) ?? ""
+        self.error = try c.decodeIfPresent(String.self, forKey: .error)
     }
 }
 

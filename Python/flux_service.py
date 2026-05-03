@@ -23,7 +23,50 @@ DEFAULT_WIDTH = 1024
 DEFAULT_NUM_STEPS = 4
 DEFAULT_GUIDANCE = 1.0  # required for distilled FLUX.2
 DEFAULT_SCHEDULER = "flow_match_euler_discrete"
-FALLBACK_SUBJECT = "a plant in the style of 19th century botanical illustration"
+
+# Kingdom-specific prompt templates. Each names a color-aware historical
+# exemplar so the model commits to the period palette instead of falling back
+# to monochrome 19th-century engravings (the default behaviour for "natural
+# history plate" without a colored anchor).
+KINGDOM_PROMPTS = {
+    "plant": (
+        "A hand-coloured botanical illustration of {scientific_name}, {common_name}, "
+        "in the style of Ferdinand Bauer and Pierre-Joseph Redouté — 19th century natural history plates "
+        "with delicate watercolour washes, fine ink linework, and accurate botanical detail. "
+        "{subject}. "
+        "On plain neutral paper background. No text, no labels, no border."
+    ),
+    "animal": (
+        "A hand-coloured zoological plate of {scientific_name}, {common_name}, "
+        "in the style of John James Audubon's Birds of America and John Gould's monographs — "
+        "19th century natural history with rich watercolour pigments, careful anatomical detail, "
+        "and a poised lifelike pose. Full colour, never grayscale or sepia. "
+        "{subject}. "
+        "On plain neutral paper background. No text, no labels, no border."
+    ),
+    "fungus": (
+        "A hand-coloured mycological plate of {scientific_name}, {common_name}, "
+        "in the style of Anna Maria Hussey and the Victorian fungal monographs — "
+        "soft watercolour with careful attention to gill colour and cap texture, "
+        "showing the whole specimen alongside a cross-section view. "
+        "{subject}. "
+        "On plain neutral paper background. No text, no labels, no border."
+    ),
+    "other": (
+        "A hand-painted Dutch Golden Age still-life study of {common_name}, "
+        "in the style of Pieter Claesz and Willem Kalf — chiaroscuro oil painting "
+        "with warm side lighting, deep shadows, and rich saturated colour. "
+        "{subject}. "
+        "On a dark muted background. No text, no labels, no border."
+    ),
+}
+
+FALLBACK_SUBJECTS = {
+    "plant": "with characteristic leaves, stem, and flowering parts",
+    "animal": "in a natural posture showing distinctive markings",
+    "fungus": "with cap, stem, and gills clearly visible",
+    "other": "rendered in careful realistic detail",
+}
 
 _flux = None
 _image_util = None
@@ -56,20 +99,28 @@ def build_prompt(identification_json_path: str) -> str:
     with open(identification_json_path) as f:
         data = json.load(f)
 
+    # Legacy entries written before kingdom support default to "plant" — they
+    # are all plants in practice and the botanical template matches what they
+    # produced before the multi-kingdom split.
+    kingdom = (data.get("kingdom") or "plant").lower()
+    if kingdom not in KINGDOM_PROMPTS:
+        kingdom = "other"
+
     top = data.get("top_candidate", {})
-    scientific_name = top.get("scientific_name") or "unknown species"
-    common_name = top.get("common_name") or "unknown common name"
+    common_name = top.get("common_name") or "the subject"
+    scientific_name = top.get("scientific_name") or common_name
 
     visible = data.get("visible_evidence", [])
     subject = "; ".join(visible)
     if len(subject) < 20:
-        subject = FALLBACK_SUBJECT
+        subject = FALLBACK_SUBJECTS.get(kingdom, FALLBACK_SUBJECTS["plant"])
 
-    return (
-        f"A botanical illustration of {scientific_name}, {common_name}, "
-        f"in the style of 19th century natural history plates. "
-        f"{subject}. "
-        f"On plain neutral background. No text, no labels, no border."
+    template = KINGDOM_PROMPTS[kingdom]
+    print(f"[flux.py] kingdom={kingdom} common={common_name!r} scientific={scientific_name!r}", file=sys.stderr, flush=True)
+    return template.format(
+        scientific_name=scientific_name,
+        common_name=common_name,
+        subject=subject,
     )
 
 

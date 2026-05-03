@@ -206,7 +206,7 @@ struct EntryDetailView: View {
 
             if !visibleEvidence.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
-                    Eyebrow(text: "Visible characters")
+                    Eyebrow(text: entry.kingdom.visibleEvidenceLabel)
                     FlowingTags(tags: visibleEvidence)
                 }
             }
@@ -294,7 +294,7 @@ struct EntryDetailView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 Hairline(color: DS.hairline)
-                Text("Identification produced locally. Treat as a reference — verify with a field guide before consumption or handling.")
+                safetyFooter
                     .font(DS.sans(11))
                     .tracking(0.4)
                     .lineSpacing(3)
@@ -355,6 +355,24 @@ struct EntryDetailView: View {
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let evidence = json["visible_evidence"] as? [String] else { return [] }
         return evidence
+    }
+
+    // Kingdom-specific safety boilerplate for the panel footer. The fungus
+    // case bolds "Never eat" — mushroom misidentification has lethal stakes
+    // and a polite hedge would undersell that.
+    private var safetyFooter: Text {
+        switch entry.kingdom {
+        case .plant:
+            return Text("Identification produced locally. Treat as a reference — verify with a field guide before consumption or handling.")
+        case .animal:
+            return Text("Identification produced locally. Treat as a reference — do not approach, handle, or feed wildlife based on this.")
+        case .fungus:
+            return Text("Identification produced locally. ")
+                + Text("Never eat a wild mushroom based on this identification.").bold()
+                + Text(" Many edible species have lethal lookalikes.")
+        case .other:
+            return Text("Identification produced locally. Treat as a reference.")
+        }
     }
 
     private var alternatives: [AlternativeRow] {

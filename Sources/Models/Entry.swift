@@ -22,3 +22,38 @@ struct Entry: Codable, FetchableRecord, PersistableRecord, Identifiable {
         case illustrationFilename, plateFilename, notes
     }
 }
+
+// Pre-kingdom-aware entries (all plants) have no `kingdom` key in their
+// identificationJson. `parse(_:)` defaults to .plant so legacy rows render
+// correctly with no migration.
+enum Kingdom: String {
+    case plant
+    case animal
+    case fungus
+    case other
+
+    static func parse(_ raw: String?) -> Kingdom {
+        guard let raw = raw?.lowercased() else { return .plant }
+        return Kingdom(rawValue: raw) ?? .plant
+    }
+
+    // Tracked-mono eyebrow shown beside Nº in the library row.
+    var displayLabel: String {
+        switch self {
+        case .plant: return "BOTANY"
+        case .animal: return "ZOOLOGY"
+        case .fungus: return "MYCOLOGY"
+        case .other: return "STILL LIFE"
+        }
+    }
+
+    // Eyebrow over the chip list in the detail panel.
+    var visibleEvidenceLabel: String {
+        switch self {
+        case .plant: return "Visible characters"
+        case .animal: return "Field marks"
+        case .fungus: return "Macroscopic features"
+        case .other: return "Description"
+        }
+    }
+}
