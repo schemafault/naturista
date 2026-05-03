@@ -275,13 +275,6 @@ enum AppPaths {
         applicationSupport.appendingPathComponent("models", isDirectory: true)
     }
 
-    // mflux 4-bit FLUX.2 Klein weights. The Python flux service reads its
-    // location from FLUX_MODEL_PATH (FluxActor injects this), so the
-    // directory name only needs to stay in sync with the migrator.
-    static var fluxModel: URL {
-        models.appendingPathComponent("flux2-klein-4b-mflux-4bit", isDirectory: true)
-    }
-
     static func ensureDirectories() {
         let dirs = [assets, originals, working, thumbnails, generated, illustrations, plates, models]
         let fm = FileManager.default
@@ -462,17 +455,15 @@ enum ModelStorageMigrator {
                                 fileManager: FileManager = .default) {
         if userDefaults.bool(forKey: completedFlag) { return }
 
+        // Only Gemma weights are migrated. The legacy mflux FLUX layout
+        // is gone — Flux2Core uses a different on-disk structure
+        // (black-forest-labs/...) and re-downloads on first use.
         let pairs: [(label: String, source: URL, destination: URL)] =
             GemmaModel.allCases.map { model in
                 (model.directoryName,
                  URL(fileURLWithPath: model.legacyCachePath),
                  URL(fileURLWithPath: model.localCachePath))
             }
-            + [(
-                "flux2-klein-4b-mflux-4bit",
-                URL(fileURLWithPath: NSString(string: "~/.cache/flux2-klein-4b-mflux-4bit").expandingTildeInPath),
-                AppPaths.fluxModel
-            )]
 
         try? fileManager.createDirectory(at: AppPaths.models,
                                          withIntermediateDirectories: true)

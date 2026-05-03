@@ -32,6 +32,11 @@ actor PipelineService {
     // here leaves the entry with the prior thumbnail intact.
     private func refreshThumbnail(for entry: inout Entry, illustrationPath: String) async {
         let illustrationURL = URL(fileURLWithPath: illustrationPath)
+        // Illustration filenames are deterministic ({entryId}_illustration.png),
+        // so a regen overwrites the same path. ImageCache keys on URL, so
+        // without this eviction views keep displaying the previously decoded
+        // NSImage until relaunch.
+        ImageCache.shared.evict(illustrationURL)
         do {
             let newThumbURL = try await ImageService.shared.createThumbnail(from: illustrationURL)
             let oldFilename = entry.thumbnailFilename

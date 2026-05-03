@@ -88,8 +88,7 @@ actor FluxActor {
         if let pipeline { return pipeline }
         let next = Flux2Pipeline(
             model: .klein4B,
-            // ultraMinimal = text encoder mlx4bit + transformer int4,
-            // matching the Python flux2-klein-4b-mflux-4bit baseline.
+            // ultraMinimal = text encoder mlx4bit + transformer int4.
             quantization: .ultraMinimal
         )
         try await next.loadModels()
