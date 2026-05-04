@@ -16,6 +16,7 @@ struct IllustrationStyleSheet: View {
     @State private var showResetAllConfirm = false
 
     @State private var selectedModel: GemmaModel = GemmaModelStore.shared.selected
+    @State private var selectedFluxQuant: FluxQuantizationPreference = FluxQuantizationStore.shared.selected
     @State private var isDownloading = false
     @State private var downloadingModel: GemmaModel? = nil
     @State private var modelError: String? = nil
@@ -24,9 +25,11 @@ struct IllustrationStyleSheet: View {
 
     private var savedModel: GemmaModel { GemmaModelStore.shared.selected }
     private var modelChanged: Bool { selectedModel != savedModel }
+    private var savedFluxQuant: FluxQuantizationPreference { FluxQuantizationStore.shared.selected }
+    private var fluxQuantChanged: Bool { selectedFluxQuant != savedFluxQuant }
 
     private var isDirty: Bool {
-        if modelChanged { return true }
+        if modelChanged || fluxQuantChanged { return true }
         for kingdom in allKingdoms {
             let saved = IllustrationPromptStore.shared.template(for: kingdom)
             if (drafts[kingdom] ?? saved) != saved { return true }
@@ -45,6 +48,8 @@ struct IllustrationStyleSheet: View {
                     }
                     Hairline()
                     modelSection
+                    Hairline()
+                    fluxQuantizationSection
                 }
                 .padding(.horizontal, 36)
                 .padding(.vertical, 28)
@@ -221,6 +226,90 @@ struct IllustrationStyleSheet: View {
                     .lineLimit(3)
             }
         }
+    }
+
+    // MARK: - Illustration quantization picker
+
+    private var fluxQuantizationSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                Eyebrow(text: "Illustration quality")
+                if fluxQuantChanged {
+                    MonoLabel(text: "MODIFIED", size: 9.5, color: DS.amber)
+                }
+            }
+
+            Text("Pick how aggressively FLUX quantizes its weights. Higher fidelity costs more RAM during generation. Auto picks the best preset for this Mac.")
+                .font(DS.sans(12))
+                .foregroundColor(DS.inkSoft)
+                .lineLimit(3)
+
+            VStack(spacing: 0) {
+                ForEach(FluxQuantizationPreference.allCases) { option in
+                    fluxQuantRow(option)
+                    if option != FluxQuantizationPreference.allCases.last { Hairline() }
+                }
+            }
+            .background(DS.paperDeep)
+            .overlay(Rectangle().stroke(DS.hairline, lineWidth: 1))
+        }
+    }
+
+    @ViewBuilder
+    private func fluxQuantRow(_ option: FluxQuantizationPreference) -> some View {
+        let isSelected = selectedFluxQuant == option
+        let compat = option.compatibility()
+        let isDefault = option == .auto
+        Button(action: {
+            guard compat.isSelectable else { return }
+            selectedFluxQuant = option
+        }) {
+            HStack(spacing: 14) {
+                radioGlyph(isSelected: isSelected)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 8) {
+                        Text(option.displayName)
+                            .font(DS.sans(13, weight: isSelected ? .semibold : .medium))
+                            .foregroundColor(DS.ink)
+                        if isDefault {
+                            MonoLabel(text: "DEFAULT", size: 9, color: DS.muted)
+                        }
+                        if option == .auto {
+                            // Show what Auto resolves to on this Mac so the
+                            // user knows what they'd get without picking.
+                            let resolved = autoResolvedDisplayName()
+                            MonoLabel(text: "→ \(resolved.uppercased())", size: 9, color: DS.muted)
+                        }
+                        compatibilityBadge(compat)
+                    }
+                    Text(option.blurb)
+                        .font(DS.sans(11.5))
+                        .foregroundColor(DS.inkSoft)
+                        .lineLimit(2)
+                    if let reason = compat.reason {
+                        Text(reason)
+                            .font(DS.sans(11))
+                            .foregroundColor(compat.isSelectable ? DS.amber : DS.rust)
+                            .lineLimit(2)
+                    }
+                }
+                Spacer()
+            }
+            .padding(.leading, 14)
+            .padding(.trailing, 14)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!compat.isSelectable)
+        .background(isSelected ? DS.paper : Color.clear)
+        .opacity(compat.isSelectable ? 1.0 : 0.55)
+    }
+
+    private func autoResolvedDisplayName() -> String {
+        SystemCapability.current.physicalMemoryGB >= 48
+            ? FluxQuantizationPreference.minimal.displayName
+            : FluxQuantizationPreference.ultraMinimal.displayName
     }
 
     @ViewBuilder
@@ -433,6 +522,7 @@ struct IllustrationStyleSheet: View {
             drafts[kingdom] = IllustrationPromptStore.shared.template(for: kingdom)
         }
         selectedModel = GemmaModelStore.shared.selected
+        selectedFluxQuant = FluxQuantizationStore.shared.selected
         modelError = nil
     }
 
@@ -486,9 +576,25 @@ struct IllustrationStyleSheet: View {
             // Persist model selection. If the model changed, shut down the
             // current Gemma subprocess so the next identify spawns a fresh one
             // with the new GEMMA_MODEL_PATH (read lazily via the env closure).
+            // Then warm the new model in the background so the next import
+            // doesn't pay the container build — same pattern as launch.
             if chosen != GemmaModelStore.shared.selected {
                 GemmaModelStore.shared.setSelected(chosen)
                 await GemmaActor.shared.shutdown()
+                Task.detached(priority: .utility) {
+                    try? await ModelLease.shared.withExclusive(.identification) {
+                        await GemmaActor.shared.preload()
+                    }
+                }
+            }
+
+            // Persist FLUX quantization preference. If it changed, drop the
+            // resident pipeline so the next illustrate cold-loads with the
+            // new preset.
+            let chosenFlux = selectedFluxQuant
+            if chosenFlux != FluxQuantizationStore.shared.selected {
+                FluxQuantizationStore.shared.setSelected(chosenFlux)
+                await FluxActor.shared.shutdown()
             }
 
             await MainActor.run { dismiss() }

@@ -23,6 +23,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // Warm Gemma in the background so the first identify after launch
+        // skips VLMModelFactory's container build. Goes through the lease
+        // so any (theoretical) resident FLUX is evicted first; on a fresh
+        // launch nothing is resident, so this is just a load.
+        Task.detached(priority: .utility) {
+            guard GemmaModelStore.shared.selected.isInstalled else { return }
+            try? await ModelLease.shared.withExclusive(.identification) {
+                await GemmaActor.shared.preload()
+            }
+        }
+
         let contentView = ContentView()
 
         window = NSWindow(

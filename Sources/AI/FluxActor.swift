@@ -88,22 +88,38 @@ actor FluxActor {
         if let pipeline { return pipeline }
         let next = Flux2Pipeline(
             model: .klein4B,
-            // minimal = text encoder mlx4bit + transformer qint8. The
-            // transformer drives color fidelity, and on-the-fly int4
-            // (`.ultraMinimal`) introduced visible hue/desaturation
-            // shifts vs. the prior mflux pipeline (which loaded
-            // calibrated 4-bit weights). qint8 restores fidelity at
-            // ~40 GB peak (text encoder and transformer are not
-            // co-resident; +8 GB for VAE and working memory). Targets
-            // 48 GB+ Macs — smaller machines should fall back to
-            // `.ultraMinimal`. ModelLease evicts Gemma before FLUX
-            // loads so the FLUX residency budget is the full RAM minus
-            // OS overhead.
-            quantization: .minimal
+            quantization: Self.quantization(
+                for: SystemCapability.current,
+                preference: FluxQuantizationStore.shared.selected
+            )
         )
         try await next.loadModels()
         self.pipeline = next
         return next
+    }
+
+    // `.minimal` (mlx4bit text encoder + qint8 transformer, ~47 GB peak
+    // per Flux2QuantizationConfig.imageGenerationPhaseMemoryGB) is the
+    // fidelity target — qint8 preserved color vs. the prior mflux
+    // pipeline, while on-the-fly int4 introduced visible hue and
+    // desaturation shifts. On Macs that can't seat 47 GB the auto path
+    // falls back to `.ultraMinimal` (int4 transformer, ~30 GB peak) —
+    // less faithful but loads instead of OOM-killing the app.
+    //
+    // Power users override via FluxQuantizationStore: pin `.balanced`
+    // for sharper output on big Macs, or `.ultraMinimal` to free RAM for
+    // other workloads. ModelLease evicts Gemma before FLUX loads, so the
+    // FLUX budget is full RAM minus OS overhead.
+    static func quantization(
+        for capability: SystemCapability,
+        preference: FluxQuantizationPreference
+    ) -> Flux2QuantizationConfig {
+        switch preference {
+        case .ultraMinimal: return .ultraMinimal
+        case .minimal:      return .minimal
+        case .balanced:     return .balanced
+        case .auto:         return capability.physicalMemoryGB >= 48 ? .minimal : .ultraMinimal
+        }
     }
 
     private static func writePNG(_ image: CGImage, to url: URL) throws {

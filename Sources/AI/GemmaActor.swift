@@ -48,6 +48,18 @@ actor GemmaActor {
         return try Self.parseAndValidate(raw)
     }
 
+    // Best-effort: warm the container so the first identify call doesn't
+    // pay the full VLMModelFactory build (which dominates first-call
+    // latency for the larger Gemma SKUs). Caller is responsible for
+    // taking the identification lease so FLUX, if resident, gets evicted
+    // first. No-op if no model is installed yet — preload doesn't trigger
+    // a download, that's `GemmaModelDownloader`'s job.
+    func preload() async {
+        let model = GemmaModelStore.shared.selected
+        guard model.isInstalled else { return }
+        _ = try? await ensureContainer(for: model)
+    }
+
     func shutdown() async {
         // Drop the strong reference first so ARC frees the model's
         // MLXArrays. The metal allocator keeps a buffer cache for

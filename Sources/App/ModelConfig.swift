@@ -10,24 +10,30 @@ enum ModelConfig {
 
 enum GemmaModel: String, CaseIterable, Identifiable, Sendable {
     case gemma4_31b
+    case gemma3_27b_qat
     case gemma3_12b
     case gemma3_4b
+    case gemma4_e4b
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
         case .gemma4_31b:        return "Gemma 4 31B"
+        case .gemma3_27b_qat:    return "Gemma 3 27B (QAT)"
         case .gemma3_12b:        return "Gemma 3 12B"
         case .gemma3_4b:         return "Gemma 3 4B"
+        case .gemma4_e4b:        return "Gemma 4 E4B"
         }
     }
 
     var hfRepo: String {
         switch self {
         case .gemma4_31b:        return "mlx-community/gemma-4-31b-it-4bit"
+        case .gemma3_27b_qat:    return "mlx-community/gemma-3-27b-it-qat-4bit"
         case .gemma3_12b:        return "mlx-community/gemma-3-12b-it-4bit"
         case .gemma3_4b:         return "mlx-community/gemma-3-4b-it-4bit"
+        case .gemma4_e4b:        return "mlx-community/gemma-4-e4b-it-4bit"
         }
     }
 
@@ -37,8 +43,10 @@ enum GemmaModel: String, CaseIterable, Identifiable, Sendable {
     var directoryName: String {
         switch self {
         case .gemma4_31b:        return "gemma-4-31b-dense-4bit-mlx"
+        case .gemma3_27b_qat:    return "gemma-3-27b-it-qat-4bit"
         case .gemma3_12b:        return "gemma-3-12b-it-4bit"
         case .gemma3_4b:         return "gemma-3-4b-it-4bit"
+        case .gemma4_e4b:        return "gemma-4-e4b-it-4bit"
         }
     }
 
@@ -49,16 +57,20 @@ enum GemmaModel: String, CaseIterable, Identifiable, Sendable {
     var approxSizeGB: Double {
         switch self {
         case .gemma4_31b:        return 17
+        case .gemma3_27b_qat:    return 14
         case .gemma3_12b:        return 7.5
         case .gemma3_4b:         return 3.2
+        case .gemma4_e4b:        return 4
         }
     }
 
     var blurb: String {
         switch self {
         case .gemma4_31b:        return "Original. Strongest on long-tail species."
+        case .gemma3_27b_qat:    return "Quantization-aware-trained 27B. Sharper than naive 4-bit at similar memory."
         case .gemma3_12b:        return "Default. Half the memory of 31B with comparable accuracy on common species."
         case .gemma3_4b:         return "Lightest. Fastest. Weaker on rare species."
+        case .gemma4_e4b:        return "Newest small Gemma. Selective-activation 4B with stronger reasoning than 3 4B."
         }
     }
 
@@ -76,8 +88,10 @@ enum GemmaModel: String, CaseIterable, Identifiable, Sendable {
     // alone. Min = "will probably load," Recommended = "will run smoothly."
     var requirements: ModelRequirements {
         switch self {
+        case .gemma4_e4b:        return ModelRequirements(minRAMGB: 8,  recommendedRAMGB: 16, minDiskGB: 6)
         case .gemma3_4b:         return ModelRequirements(minRAMGB: 8,  recommendedRAMGB: 16, minDiskGB: 5)
         case .gemma3_12b:        return ModelRequirements(minRAMGB: 16, recommendedRAMGB: 24, minDiskGB: 10)
+        case .gemma3_27b_qat:    return ModelRequirements(minRAMGB: 20, recommendedRAMGB: 32, minDiskGB: 16)
         case .gemma4_31b:        return ModelRequirements(minRAMGB: 24, recommendedRAMGB: 36, minDiskGB: 20)
         }
     }
@@ -132,6 +146,89 @@ enum ModelCompatibility: Equatable {
         case .compatible: return nil
         case .marginal(let r), .incompatible(let r): return r
         }
+    }
+}
+
+// MARK: - Illustration model registry
+//
+// User's choice of FLUX quantization preset. `auto` defers to FluxActor's
+// hardware-aware selection (the default — picks `.minimal` on ≥48 GB Macs,
+// `.ultraMinimal` below). The named presets let power users override:
+// pick `balanced` for sharper output on a 96 GB machine, or pin
+// `ultraMinimal` on a small Mac to avoid OOM risk.
+enum FluxQuantizationPreference: String, CaseIterable, Identifiable, Sendable {
+    case auto
+    case ultraMinimal
+    case minimal
+    case balanced
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .auto:         return "Auto"
+        case .ultraMinimal: return "Ultra minimal"
+        case .minimal:      return "Minimal"
+        case .balanced:     return "Balanced"
+        }
+    }
+
+    var blurb: String {
+        switch self {
+        case .auto:         return "Picks Minimal on Macs with 48 GB+ RAM, Ultra minimal otherwise."
+        case .ultraMinimal: return "int4 transformer. Lowest memory, slight color drift vs. Minimal."
+        case .minimal:      return "qint8 transformer. Fidelity target — matches the original mflux pipeline."
+        case .balanced:     return "8-bit text encoder + qint8 transformer. Sharper text/edge details on big Macs."
+        }
+    }
+
+    // Conservative thresholds for the picker compatibility badge. Real
+    // peak comes from Flux2QuantizationConfig.imageGenerationPhaseMemoryGB
+    // plus OS overhead — we leave headroom so a user on the boundary
+    // isn't told "compatible" only to OOM mid-generation.
+    var requirements: ModelRequirements? {
+        switch self {
+        case .auto:         return nil
+        case .ultraMinimal: return ModelRequirements(minRAMGB: 24, recommendedRAMGB: 32, minDiskGB: 0)
+        case .minimal:      return ModelRequirements(minRAMGB: 40, recommendedRAMGB: 48, minDiskGB: 0)
+        case .balanced:     return ModelRequirements(minRAMGB: 56, recommendedRAMGB: 64, minDiskGB: 0)
+        }
+    }
+
+    func compatibility(on capability: SystemCapability = .current) -> ModelCompatibility {
+        guard let req = requirements else { return .compatible }
+        let ram = capability.physicalMemoryGB
+        let ramRounded = Int(ram.rounded())
+        if ram < req.minRAMGB - 0.5 {
+            return .incompatible(reason: "Needs \(Int(req.minRAMGB)) GB RAM. This Mac has \(ramRounded) GB.")
+        }
+        if ram < req.recommendedRAMGB - 0.5 {
+            return .marginal(reason: "May OOM on \(ramRounded) GB. \(Int(req.recommendedRAMGB)) GB recommended.")
+        }
+        return .compatible
+    }
+}
+
+final class FluxQuantizationStore: @unchecked Sendable {
+    static let shared = FluxQuantizationStore()
+
+    private let key = "flux.quantizationPreference"
+    private let userDefaults: UserDefaults
+
+    init(userDefaults: UserDefaults = .standard) {
+        self.userDefaults = userDefaults
+    }
+
+    var selected: FluxQuantizationPreference {
+        if let raw = userDefaults.string(forKey: key),
+           let p = FluxQuantizationPreference(rawValue: raw) {
+            return p
+        }
+        return .auto
+    }
+
+    func setSelected(_ preference: FluxQuantizationPreference) {
+        userDefaults.set(preference.rawValue, forKey: key)
     }
 }
 
