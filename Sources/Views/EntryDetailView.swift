@@ -22,6 +22,13 @@ struct EntryDetailView: View {
     @State private var pipelineError: String?
     @State private var preserveLayout = false
     @State private var exportMenuPresented = false
+    @State private var isAddingTag = false
+    @State private var tagDraft: String = ""
+    @State private var allKnownTags: [String] = []
+    @State private var promptSectionExpanded = false
+    @State private var isEditingPrompt = false
+    @State private var promptDraft: String = ""
+    @State private var promptError: String?
 
     enum PlateTab { case plate, photo }
 
@@ -50,7 +57,10 @@ struct EntryDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(DS.paper)
-        .onAppear { updateWindowTitle() }
+        .onAppear {
+            updateWindowTitle()
+            loadKnownTags()
+        }
         .sheet(isPresented: $showNotes) {
             NotesEditor(entry: $entry, onSave: persistEntry)
         }
@@ -259,6 +269,8 @@ struct EntryDetailView: View {
                 }
             }
 
+            tagsSection
+
             if !id.alternatives.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     Eyebrow(text: "Alternatives")
@@ -300,6 +312,8 @@ struct EntryDetailView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+
+            illustrationPromptSection
 
             VStack(alignment: .leading, spacing: 10) {
                 Eyebrow(text: "Workspace")
@@ -413,6 +427,161 @@ struct EntryDetailView: View {
         }
     }
 
+    // MARK: - Illustration prompt override
+
+    @ViewBuilder
+    private var illustrationPromptSection: some View {
+        let busy = isRetrying || isRecomposing || isCorrecting || isDeleting
+        let hasOverride = (entry.customFluxPrompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+        let effectivePrompt = currentEffectivePrompt()
+        let canEdit = entry.identification.result != nil
+
+        VStack(alignment: .leading, spacing: 10) {
+            Button(action: { promptSectionExpanded.toggle() }) {
+                HStack(spacing: 8) {
+                    Image(systemName: promptSectionExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .regular))
+                        .foregroundColor(DS.muted)
+                    Eyebrow(text: "Illustration prompt")
+                    if hasOverride {
+                        MonoLabel(text: "OVERRIDE", size: 9.5, color: DS.amber)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if promptSectionExpanded {
+                if !canEdit {
+                    Text("Run identification first to see and edit the prompt.")
+                        .font(DS.sans(11.5))
+                        .foregroundColor(DS.inkSoft)
+                } else if isEditingPrompt {
+                    TextEditor(text: $promptDraft)
+                        .font(DS.mono(11.5))
+                        .foregroundColor(DS.ink)
+                        .scrollContentBackground(.hidden)
+                        .padding(10)
+                        .background(DS.paperDeep)
+                        .overlay(Rectangle().stroke(DS.hairline, lineWidth: 1))
+                        .frame(minHeight: 160)
+
+                    HStack(spacing: 10) {
+                        Button("Save") { applyPromptDraft() }
+                            .buttonStyle(QuietButtonStyle())
+                            .disabled(busy)
+                        Button("Cancel") {
+                            isEditingPrompt = false
+                            promptDraft = ""
+                            promptError = nil
+                        }
+                        .buttonStyle(GhostButtonStyle())
+                        .disabled(busy)
+                    }
+                } else {
+                    Text(effectivePrompt)
+                        .font(DS.mono(11.5))
+                        .foregroundColor(DS.ink)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(DS.paperDeep)
+                        .overlay(Rectangle().stroke(DS.hairlineSoft, lineWidth: 1))
+
+                    HStack(spacing: 10) {
+                        Button("Edit prompt") {
+                            promptDraft = effectivePrompt
+                            isEditingPrompt = true
+                            promptError = nil
+                        }
+                        .buttonStyle(QuietButtonStyle())
+                        .disabled(busy)
+
+                        if hasOverride {
+                            Button("Reset to template") { resetPromptOverride() }
+                                .buttonStyle(GhostButtonStyle())
+                                .disabled(busy)
+                        }
+                    }
+
+                    Text(hasOverride
+                        ? "This entry uses a custom prompt. Re-identifying won't update it — use Reset to follow the template again."
+                        : "Generated from the kingdom template and Gemma's photo description. Edit to override per-entry.")
+                        .font(DS.sans(11))
+                        .foregroundColor(DS.muted)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let promptError {
+                    Text(promptError)
+                        .font(DS.sans(11))
+                        .foregroundColor(DS.rust)
+                        .lineLimit(3)
+                }
+            }
+        }
+    }
+
+    private func currentEffectivePrompt() -> String {
+        if let override = entry.customFluxPrompt?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !override.isEmpty {
+            return override
+        }
+        guard let result = entry.identification.result else { return "" }
+        let template = IllustrationPromptStore.shared.template(
+            for: Kingdom.parse(result.kingdom)
+        )
+        return IllustrationPrompts.render(template: template, identification: result)
+    }
+
+    private func applyPromptDraft() {
+        let snapshotId = entry.id
+        let draft = promptDraft
+        Task {
+            do {
+                _ = try await DatabaseService.shared.setCustomFluxPrompt(
+                    id: snapshotId,
+                    prompt: draft
+                )
+                if let updated = try await DatabaseService.shared.fetchEntry(id: snapshotId) {
+                    await MainActor.run {
+                        entry = updated
+                        isEditingPrompt = false
+                        promptDraft = ""
+                        promptError = nil
+                        onUpdated?(updated)
+                    }
+                }
+            } catch {
+                await MainActor.run { promptError = error.localizedDescription }
+            }
+        }
+    }
+
+    private func resetPromptOverride() {
+        let snapshotId = entry.id
+        Task {
+            do {
+                _ = try await DatabaseService.shared.setCustomFluxPrompt(
+                    id: snapshotId,
+                    prompt: nil
+                )
+                if let updated = try await DatabaseService.shared.fetchEntry(id: snapshotId) {
+                    await MainActor.run {
+                        entry = updated
+                        promptError = nil
+                        onUpdated?(updated)
+                    }
+                }
+            } catch {
+                await MainActor.run { promptError = error.localizedDescription }
+            }
+        }
+    }
+
     // MARK: - Preserve-layout toggle
 
     private var preserveLayoutToggle: some View {
@@ -453,6 +622,127 @@ struct EntryDetailView: View {
         .buttonStyle(.plain)
         .disabled(busy)
         .padding(.bottom, 4)
+    }
+
+    // MARK: - Tags section
+
+    private var tagsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Eyebrow(text: "Tags")
+            FlowLayout(spacing: 6) {
+                ForEach(entry.tags, id: \.self) { tag in
+                    RemovableTagChip(text: tag) { removeTag(tag) }
+                }
+                if isAddingTag {
+                    TagInputField(
+                        text: $tagDraft,
+                        suggestions: tagSuggestions,
+                        onCommit: {
+                            commitTagDraft()
+                        },
+                        onCancel: {
+                            tagDraft = ""
+                            isAddingTag = false
+                        }
+                    )
+                } else {
+                    Button {
+                        isAddingTag = true
+                        tagDraft = ""
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 9, weight: .regular))
+                            Text("Add tag")
+                                .font(DS.sans(10.5))
+                                .tracking(0.4)
+                        }
+                        .foregroundColor(DS.muted)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .overlay(Rectangle().stroke(DS.hairline, style: StrokeStyle(lineWidth: 1, dash: [2, 2])))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    // Up to 6 prefix-matching tags from the user's existing vocabulary,
+    // excluding ones already on this entry. Case-sensitive (matches the
+    // sidebar's grouping behaviour).
+    private var tagSuggestions: [String] {
+        let draft = tagDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !draft.isEmpty else { return [] }
+        let used = Set(entry.tags)
+        return allKnownTags
+            .filter { !used.contains($0) && $0.hasPrefix(draft) && $0 != draft }
+            .prefix(6)
+            .map { $0 }
+    }
+
+    private func commitTagDraft() {
+        let candidate = tagDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        defer {
+            tagDraft = ""
+            isAddingTag = false
+        }
+        guard !candidate.isEmpty, !entry.tags.contains(candidate) else { return }
+        persistTags(entry.tags + [candidate])
+    }
+
+    private func removeTag(_ tag: String) {
+        persistTags(entry.tags.filter { $0 != tag })
+    }
+
+    private func persistTags(_ newTags: [String]) {
+        let id = entry.id
+        let previous = entry.tags
+        // Optimistic local flip; reconcile from DB on response.
+        var optimistic = entry
+        optimistic.setTags(newTags)
+        entry = optimistic
+        Task {
+            do {
+                let updated = try await DatabaseService.shared.setTags(id: id, tags: newTags)
+                if let updated {
+                    await MainActor.run {
+                        entry = updated
+                        onUpdated?(updated)
+                        // Refresh known-tags so a brand-new tag becomes
+                        // suggestable on the next add without a round-trip.
+                        loadKnownTags()
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    var revert = entry
+                    revert.setTags(previous)
+                    entry = revert
+                    pipelineError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func loadKnownTags() {
+        Task {
+            do {
+                let entries = try await DatabaseService.shared.fetchAllEntries()
+                var seen = Set<String>()
+                var ordered: [String] = []
+                for e in entries {
+                    for t in e.tags where !seen.contains(t) {
+                        seen.insert(t)
+                        ordered.append(t)
+                    }
+                }
+                ordered.sort()
+                await MainActor.run { allKnownTags = ordered }
+            } catch {
+                // Silent — autocomplete is best-effort.
+            }
+        }
     }
 
     // MARK: - Side effects
@@ -795,5 +1085,84 @@ private extension String {
         // SwiftUI doesn't expose font-variant: small-caps cleanly across
         // serif renderers, so render uppercase as a near-equivalent.
         self.uppercased()
+    }
+}
+
+// TagChip with an always-visible × for removal — dimmed until hover so a
+// quiet row of chips reads cleanly, but the affordance is discoverable
+// without the user having to find it by mousing over.
+private struct RemovableTagChip: View {
+    let text: String
+    var onRemove: () -> Void
+    @State private var hovered = false
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(text)
+                .font(DS.sans(10.5))
+                .tracking(0.4)
+                .foregroundColor(DS.inkSoft)
+            Button(action: onRemove) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundColor(DS.muted)
+                    .opacity(hovered ? 1.0 : 0.5)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(DS.paperDeep)
+        .overlay(Rectangle().stroke(DS.hairlineSoft, lineWidth: 1))
+        .onHover { hovered = $0 }
+    }
+}
+
+// Inline tag input — TextField shaped like a chip, with a popover of
+// autocomplete suggestions below. Commits on Return (or selecting a
+// suggestion); cancels on Escape.
+private struct TagInputField: View {
+    @Binding var text: String
+    let suggestions: [String]
+    var onCommit: () -> Void
+    var onCancel: () -> Void
+
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        TextField("", text: $text)
+            .textFieldStyle(.plain)
+            .focused($focused)
+            .font(DS.sans(10.5))
+            .foregroundColor(DS.ink)
+            .frame(minWidth: 60)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(DS.paperDeep)
+            .overlay(Rectangle().stroke(DS.ink, lineWidth: 1))
+            .onSubmit { onCommit() }
+            .onExitCommand { onCancel() }
+            .onAppear { focused = true }
+            .popover(isPresented: .constant(!suggestions.isEmpty && focused), arrowEdge: .bottom) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(suggestions, id: \.self) { s in
+                        Button {
+                            text = s
+                            onCommit()
+                        } label: {
+                            Text(s)
+                                .font(DS.sans(11.5))
+                                .foregroundColor(DS.ink)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .frame(minWidth: 140)
+                .background(DS.paper)
+            }
     }
 }

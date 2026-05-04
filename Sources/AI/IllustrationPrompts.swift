@@ -13,39 +13,41 @@ enum IllustrationPrompts {
         "pose", "colors", "setting",
     ]
 
-    // Layout: identity → photo-derived hints (pose / colors / setting) →
-    // style references → fallback subject summary → background rule.
-    // Photo hints come early so FLUX weights them heavily.
+    // Layout: identity → specimen-only hints (pose / colors) → style
+    // references → fallback subject summary → strong blank-paper anchor.
+    // The {setting} placeholder is intentionally gone — every default
+    // template now anchors hard on "specimen alone on paper" so FLUX
+    // doesn't paint a habitat into the background.
     static let defaults: [Kingdom: String] = [
         .plant: """
             A hand-coloured botanical illustration of {scientific_name}, {common_name}, \
-            shown {pose}, with {colors}. Setting suggests {setting}. \
+            shown {pose}, with {colors}. \
             In the style of Ferdinand Bauer and Pierre-Joseph Redouté — 19th century natural history plates \
             with delicate watercolour washes, fine ink linework, and accurate botanical detail. \
             {subject}. \
-            On smooth uninterrupted cream paper, completely blank surface, unmarked margins.
+            The specimen sits alone on the paper. The paper is entirely blank — no environment, no scenery, no foliage, no shadow beyond the specimen itself, unmarked margins. Cream paper, smooth uninterrupted surface.
             """,
         .animal: """
             A hand-coloured zoological plate of {scientific_name}, {common_name}, \
-            shown {pose}, with {colors}. Setting suggests {setting}. \
+            shown {pose}, with {colors}. \
             In the style of John James Audubon's Birds of America and John Gould's monographs — \
             19th century natural history with rich watercolour pigments, careful anatomical detail, \
             and a poised lifelike pose. Full colour, never grayscale or sepia. \
             {subject}. \
-            On smooth uninterrupted cream paper, completely blank surface, unmarked margins.
+            The specimen sits alone on the paper. The paper is entirely blank — no environment, no scenery, no foliage, no shadow beyond the specimen itself, unmarked margins. Cream paper, smooth uninterrupted surface.
             """,
         .fungus: """
             A hand-coloured mycological plate of {scientific_name}, {common_name}, \
-            shown {pose}, with {colors}. Setting suggests {setting}. \
+            shown {pose}, with {colors}. \
             In the style of Anna Maria Hussey and the Victorian fungal monographs — \
             soft watercolour with careful attention to gill colour and cap texture, \
             showing the whole specimen alongside a cross-section view. \
             {subject}. \
-            On smooth uninterrupted cream paper, completely blank surface, unmarked margins.
+            The specimen sits alone on the paper. The paper is entirely blank — no environment, no scenery, no foliage, no shadow beyond the specimen itself, unmarked margins. Cream paper, smooth uninterrupted surface.
             """,
         .other: """
             A hand-painted Dutch Golden Age still-life study of {common_name}, \
-            arranged {pose}, with {colors}. Setting suggests {setting}. \
+            arranged {pose}, with {colors}. \
             In the style of Pieter Claesz and Willem Kalf — chiaroscuro oil painting \
             with warm side lighting, deep shadows, and rich saturated colour. \
             {subject}. \
@@ -65,7 +67,7 @@ enum IllustrationPrompts {
     // Per-kingdom phrases substituted in when Gemma left a hint field
     // empty (older entries, or photos too cropped to describe). Keep
     // these grammatically compatible with the surrounding template
-    // sentence: "shown {pose}, with {colors}. Setting suggests {setting}."
+    // sentence: "shown {pose}, with {colors}."
     private static let fallbackPoses: [Kingdom: String] = [
         .plant: "in characteristic posture",
         .animal: "in a relaxed natural pose",
@@ -78,13 +80,6 @@ enum IllustrationPrompts {
         .animal: "lifelike natural colours",
         .fungus: "characteristic colouration",
         .other: "realistic colour",
-    ]
-
-    private static let fallbackSettings: [Kingdom: String] = [
-        .plant: "a plain studio background",
-        .animal: "a typical habitat",
-        .fungus: "a forest substrate",
-        .other: "neutral surroundings",
     ]
 
     static func defaultTemplate(for kingdom: Kingdom) -> String {
@@ -116,9 +111,11 @@ enum IllustrationPrompts {
 
     // Renders a template against an IdentificationResult. Falls back to
     // "the subject" / kingdom-specific phrases when fields are missing or
-    // visibleEvidence is too thin. Pose / colors / setting come from
-    // Gemma's photo description; legacy entries (or sparse Gemma output)
-    // get the per-kingdom fallback so the prompt sentence still parses.
+    // visibleEvidence is too thin. Pose / colors come from Gemma's photo
+    // description. {setting} substitution is kept for backward compat with
+    // user-customised templates that still reference it — it now resolves
+    // to the empty string and any leftover "Setting suggests ." stub is
+    // stripped by the post-render cleanup below.
     static func render(template: String, identification: IdentificationResult) -> String {
         let kingdom = Kingdom.parse(identification.kingdom)
         let common = identification.topCandidate.commonName.isEmpty
@@ -139,17 +136,32 @@ enum IllustrationPrompts {
         let colors = identification.colorPalette.isEmpty
             ? (fallbackColors[kingdom] ?? fallbackColors[.plant]!)
             : identification.colorPalette
-        let setting = identification.settingDescription.isEmpty
-            ? (fallbackSettings[kingdom] ?? fallbackSettings[.plant]!)
-            : identification.settingDescription
 
-        return template
+        let substituted = template
             .replacingOccurrences(of: "{scientific_name}", with: scientific)
             .replacingOccurrences(of: "{common_name}", with: common)
             .replacingOccurrences(of: "{subject}", with: subject)
             .replacingOccurrences(of: "{pose}", with: pose)
             .replacingOccurrences(of: "{colors}", with: colors)
-            .replacingOccurrences(of: "{setting}", with: setting)
+            .replacingOccurrences(of: "{setting}", with: "")
+
+        return cleanupLegacySettingClause(substituted)
+    }
+
+    // Strips the "Setting suggests ." stub left by an empty {setting}
+    // substitution in user-customised templates carried over from before
+    // the setting field was retired. Tolerates surrounding whitespace and
+    // collapses the resulting double space.
+    private static func cleanupLegacySettingClause(_ text: String) -> String {
+        let pattern = #"\s*Setting suggests\s*\.\s*"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+            return text
+        }
+        let range = NSRange(text.startIndex..., in: text)
+        let cleaned = regex.stringByReplacingMatches(in: text, range: range, withTemplate: " ")
+        return cleaned
+            .replacingOccurrences(of: "  ", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

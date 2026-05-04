@@ -15,13 +15,19 @@ struct Entry: Codable, FetchableRecord, PersistableRecord, Identifiable {
     var thumbnailFilename: String? = nil
     var notes: String = ""
     var pinned: Bool = false
+    var tagsJson: String = "[]"
+    // Per-entry override that bypasses the kingdom-template render path
+    // in FluxActor. Edited via the detail view's "Illustration prompt"
+    // section. Nil means "follow the rendered template" — the default.
+    var customFluxPrompt: String? = nil
 
     static let databaseTableName = "entries"
 
     enum Columns: String, ColumnExpression {
         case id, createdAt, capturedAt, originalImageFilename, workingImageFilename
         case identificationJson, modelConfidence, userStatus
-        case illustrationFilename, plateFilename, thumbnailFilename, notes, pinned
+        case illustrationFilename, plateFilename, thumbnailFilename, notes, pinned, tagsJson
+        case customFluxPrompt
     }
 }
 
@@ -33,6 +39,30 @@ extension Entry {
     mutating func setIdentification(_ id: Identification) {
         identificationJson = id.encodedJSON()
         modelConfidence = id.modelConfidence
+    }
+
+    var tags: [String] {
+        guard let data = tagsJson.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([String].self, from: data)) ?? []
+    }
+
+    // Trim whitespace, drop empties, dedupe (case-sensitive, order-preserving),
+    // and re-encode. Centralised so callers can't smuggle in dirty input.
+    mutating func setTags(_ newTags: [String]) {
+        var seen = Set<String>()
+        var clean: [String] = []
+        for raw in newTags {
+            let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !t.isEmpty, !seen.contains(t) else { continue }
+            seen.insert(t)
+            clean.append(t)
+        }
+        if let data = try? JSONEncoder().encode(clean),
+           let json = String(data: data, encoding: .utf8) {
+            tagsJson = json
+        } else {
+            tagsJson = "[]"
+        }
     }
 }
 

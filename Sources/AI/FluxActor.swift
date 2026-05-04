@@ -51,7 +51,8 @@ actor FluxActor {
     func generate(
         identification: IdentificationResult,
         entryId: UUID,
-        referencePhotoPath: String? = nil
+        referencePhotoPath: String? = nil,
+        customPrompt: String? = nil
     ) async throws -> String {
         // ModelLease is the production caller and shuts us down after
         // each illustration, so this defer is mostly a safety net for
@@ -61,10 +62,16 @@ actor FluxActor {
 
         // Swift owns the per-kingdom templates and the {scientific_name} /
         // {common_name} / {subject} substitution — same behavior the
-        // Python actor had.
-        let kingdom = Kingdom.parse(identification.kingdom)
-        let template = IllustrationPromptStore.shared.template(for: kingdom)
-        let prompt = IllustrationPrompts.render(template: template, identification: identification)
+        // Python actor had. A non-empty `customPrompt` overrides the
+        // template path entirely so per-entry edits ship to FLUX verbatim.
+        let prompt: String
+        if let custom = customPrompt?.trimmingCharacters(in: .whitespacesAndNewlines), !custom.isEmpty {
+            prompt = custom
+        } else {
+            let kingdom = Kingdom.parse(identification.kingdom)
+            let template = IllustrationPromptStore.shared.template(for: kingdom)
+            prompt = IllustrationPrompts.render(template: template, identification: identification)
+        }
 
         let illustrationFilename = "\(entryId.uuidString)_illustration.png"
         let outputURL = AppPaths.illustrations.appendingPathComponent(illustrationFilename)

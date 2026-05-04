@@ -75,7 +75,8 @@ protocol IllustratorPort: Sendable {
     func generate(
         identification: IdentificationResult,
         entryId: UUID,
-        referencePhotoPath: String?
+        referencePhotoPath: String?,
+        customPrompt: String?
     ) async throws -> String
 }
 
@@ -87,7 +88,8 @@ extension IllustratorPort {
         try await generate(
             identification: identification,
             entryId: entryId,
-            referencePhotoPath: nil
+            referencePhotoPath: nil,
+            customPrompt: nil
         )
     }
 }
@@ -254,6 +256,7 @@ actor EntryPipeline {
             entryId: entryId,
             identification: identification,
             referencePhotoPath: referencePhotoPath,
+            customPrompt: entry.customFluxPrompt,
             persistFailureToEntry: true
         )
     }
@@ -317,6 +320,7 @@ actor EntryPipeline {
             entryId: entryId,
             identification: result,
             referencePhotoPath: nil,
+            customPrompt: entry.customFluxPrompt,
             persistFailureToEntry: false
         )
     }
@@ -348,6 +352,7 @@ actor EntryPipeline {
             entryId: entryId,
             identification: identification,
             referencePhotoPath: referencePhotoPath,
+            customPrompt: entry.customFluxPrompt,
             persistFailureToEntry: false
         )
     }
@@ -371,11 +376,16 @@ actor EntryPipeline {
     // Single FLUX-success path used by both illustrate and regenerate.
     // Owns: lease wrapping, save-on-success, thumbnail refresh, and the
     // (different) failure-handling policy controlled by the flag.
+    //
+    // `customPrompt` lets the caller bypass the kingdom-template render
+    // path and ship a per-entry prompt verbatim to FLUX. When nil, FLUX
+    // renders from `identification` as usual.
     private func runIllustration(
         on entry: inout Entry,
         entryId: UUID,
         identification: IdentificationResult,
         referencePhotoPath: String?,
+        customPrompt: String?,
         persistFailureToEntry: Bool
     ) async throws {
         let illustrator = deps.illustrator
@@ -384,7 +394,8 @@ actor EntryPipeline {
                 try await illustrator.generate(
                     identification: identification,
                     entryId: entryId,
-                    referencePhotoPath: referencePhotoPath
+                    referencePhotoPath: referencePhotoPath,
+                    customPrompt: customPrompt
                 )
             }
             entry.illustrationFilename = URL(fileURLWithPath: illustrationPath).lastPathComponent

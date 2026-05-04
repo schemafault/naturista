@@ -55,7 +55,7 @@ actor GemmaActor {
     // User-corrected re-identification. Treats the user-supplied common /
     // scientific name as authoritative, re-derives family / evidence /
     // confusion-set against the corrected species, and re-emits the
-    // photo-derived pose / colors / setting fields from this image.
+    // photo-derived pose / colors fields from this image.
     func reidentify(
         photoPath: String,
         userCommonName: String?,
@@ -187,8 +187,7 @@ actor GemmaActor {
           "missing_evidence": ["string"],
           "safety_note": "string",
           "pose_description": "string",
-          "color_palette": "string",
-          "setting_description": "string"
+          "color_palette": "string"
         }
 
         Rules for "kingdom":
@@ -201,12 +200,11 @@ actor GemmaActor {
 
         Tailor safety_note to the kingdom: warn against consumption for plants and fungi; warn against approaching or handling wildlife for animals; for "other" use a brief reference disclaimer.
 
-        The remaining three fields describe the photograph itself, so a downstream illustrator can match the pose, palette, and setting of THIS specific image. Be concrete and visual; one short clause each. Examples:
-        - pose_description: how the subject is arranged in frame. "perched on a moss-covered branch, head turned to the right, wings folded" / "single bloom shot from three-quarter angle, stem curving left" / "cluster of caps emerging from a fallen log, viewed from above". For "other" subjects, describe spatial arrangement and orientation.
-        - color_palette: the dominant colours and where they appear. "rust-brown body with white belly, black eye-stripe, yellow legs" / "deep magenta petals fading to white at the centre, dark green serrated leaves" / "ochre cap with cream gills, pale stem, brown spotting". For "other", describe the actual colours present.
-        - setting_description: the immediate surroundings and lighting. "oak woodland understory, dappled side-light from upper left" / "studio shot on plain white background, soft front lighting" / "rocky alpine scree at midday, hard overhead light". If the photo is a tight studio crop, say so.
+        The remaining two fields describe the SPECIMEN ITSELF in this photograph, so a downstream illustrator can match its pose and palette. Be concrete and visual; one short clause each. Describe ONLY the specimen — never the surroundings, habitat, lighting, or location. Examples:
+        - pose_description: how the specimen itself is posed — limb position, head angle, leaf orientation, cap angle. "head turned to the right, wings folded against the body" / "single bloom viewed from three-quarter angle, stem curving left" / "caps tilted upward in a cluster, gills hidden". Do not describe surroundings, perches, substrates, or habitat.
+        - color_palette: the dominant colours and where they appear ON THE SPECIMEN. "rust-brown body with white belly, black eye-stripe, yellow legs" / "deep magenta petals fading to white at the centre, dark green serrated leaves" / "ochre cap with cream gills, pale stem, brown spotting". Do not describe colours of the background.
 
-        These three fields should describe what is actually visible in this photograph, not what is typical for the species. If the photo is too cropped or low-quality to populate one of them, leave it as the empty string.
+        These two fields should describe what is actually visible on the specimen in this photograph, not what is typical for the species. If the photo is too cropped or low-quality to populate one of them, leave it as the empty string.
         """
 
     private static let userPrompt =
@@ -226,7 +224,7 @@ actor GemmaActor {
 
         Set model_confidence to "high" since the species is user-confirmed; reserve "medium" or "low" only if the user-supplied common and scientific names refer to different species — in that case prefer the scientific name and note the conflict in safety_note.
 
-        The pose_description, color_palette, and setting_description fields describe THIS PHOTOGRAPH and should be re-derived from the image as in normal mode — they do not depend on the species.
+        The pose_description and color_palette fields describe the SPECIMEN ITSELF in this photograph (specimen pose and specimen colours only — never surroundings) and should be re-derived from the image as in normal mode. They do not depend on the species.
         """
 
     private static func correctionUserPrompt(
@@ -264,7 +262,7 @@ actor GemmaActor {
 
         Set model_confidence honestly based on what the photograph supports — do not force it to "high" just because the user offered a hint. If the photograph genuinely supports the user's guess, return their species; if it's ambiguous between their guess and a close alternative, list the alternative in alternatives[] and pick the better-supported one.
 
-        The pose_description, color_palette, and setting_description fields describe THIS PHOTOGRAPH and should be derived from the image as in normal mode — they do not depend on the hint.
+        The pose_description and color_palette fields describe the SPECIMEN ITSELF in this photograph (specimen pose and specimen colours only — never surroundings) and should be derived from the image as in normal mode. They do not depend on the hint.
         """
 
     private static func hintUserPrompt(

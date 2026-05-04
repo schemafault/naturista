@@ -16,6 +16,7 @@ struct LibraryView: View {
     @State private var isLoading = false
     @State private var query = ""
     @State private var activeFamily: String? = nil
+    @State private var activeTag: String? = nil
     @State private var activeFilter: CollectionFilter = .all
     @State private var showIllustrationStyle = false
 
@@ -25,12 +26,21 @@ struct LibraryView: View {
     // budget on every keystroke / filter switch.
     @State private var recentIds: Set<String> = []
     @State private var familyCounts: [(String, Int)] = []
+    @State private var tagCounts: [(String, Int)] = []
+
+    @AppStorage("sidebar.familyExpanded") private var familyExpanded: Bool = false
+    @AppStorage("sidebar.tagsExpanded") private var tagsExpanded: Bool = true
+
+    @State private var pendingRenameTag: String? = nil
+    @State private var renameDraft: String = ""
+    @State private var pendingTagDelete: String? = nil
 
     private var filtered: [Entry] {
         entries.filter { e in
             let id = e.identification
             let family = id.family ?? ""
             if let fam = activeFamily, family != fam { return false }
+            if let tag = activeTag, !e.tags.contains(tag) { return false }
             switch activeFilter {
             case .all: break
             case .recent: if !recentIds.contains(e.id) { return false }
@@ -43,6 +53,7 @@ struct LibraryView: View {
             return common.lowercased().contains(q)
                 || scientific.lowercased().contains(q)
                 || family.lowercased().contains(q)
+                || e.tags.contains(where: { $0.lowercased().contains(q) })
         }
     }
 
@@ -74,6 +85,17 @@ struct LibraryView: View {
         }.map { ($0.key, $0.value) }
     }
 
+    private static func computeTagCounts(_ entries: [Entry]) -> [(String, Int)] {
+        var counts: [String: Int] = [:]
+        for e in entries {
+            for t in e.tags { counts[t, default: 0] += 1 }
+        }
+        return counts.sorted { lhs, rhs in
+            if lhs.value != rhs.value { return lhs.value > rhs.value }
+            return lhs.key < rhs.key
+        }.map { ($0.key, $0.value) }
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             sidebar
@@ -92,6 +114,7 @@ struct LibraryView: View {
         .onChange(of: reloadToken) { _, _ in reload() }
         .onChange(of: query) { _, _ in page = 0 }
         .onChange(of: activeFamily) { _, _ in page = 0 }
+        .onChange(of: activeTag) { _, _ in page = 0 }
         .onChange(of: activeFilter) { _, _ in page = 0 }
     }
 
@@ -113,10 +136,11 @@ struct LibraryView: View {
                             sidebarRow(
                                 title: "All entries",
                                 count: entries.count,
-                                isActive: activeFilter == .all && activeFamily == nil
+                                isActive: activeFilter == .all && activeFamily == nil && activeTag == nil
                             ) {
                                 activeFilter = .all
                                 activeFamily = nil
+                                activeTag = nil
                             }
                             sidebarRow(
                                 title: "Recent",
@@ -125,6 +149,7 @@ struct LibraryView: View {
                             ) {
                                 activeFilter = (activeFilter == .recent) ? .all : .recent
                                 activeFamily = nil
+                                activeTag = nil
                             }
                             let pinnedCount = entries.filter { $0.pinned }.count
                             sidebarRow(
@@ -136,23 +161,53 @@ struct LibraryView: View {
                                 guard pinnedCount > 0 else { return }
                                 activeFilter = (activeFilter == .pinned) ? .all : .pinned
                                 activeFamily = nil
+                                activeTag = nil
                             }
                         }
                     }
 
                     if !familyCounts.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
-                            Eyebrow(text: "Family")
-                                .padding(.horizontal, 14)
-                            VStack(alignment: .leading, spacing: 1) {
-                                ForEach(familyCounts, id: \.0) { fam, count in
-                                    sidebarRow(
-                                        title: fam,
-                                        count: count,
-                                        isActive: activeFamily == fam,
-                                        italic: true
-                                    ) {
-                                        activeFamily = (activeFamily == fam) ? nil : fam
+                            sectionHeader(title: "Family", expanded: $familyExpanded)
+                            if familyExpanded {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    ForEach(familyCounts, id: \.0) { fam, count in
+                                        sidebarRow(
+                                            title: fam,
+                                            count: count,
+                                            isActive: activeFamily == fam,
+                                            italic: true
+                                        ) {
+                                            activeFamily = (activeFamily == fam) ? nil : fam
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if !tagCounts.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            sectionHeader(title: "Tags", expanded: $tagsExpanded)
+                            if tagsExpanded {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    ForEach(tagCounts, id: \.0) { tag, count in
+                                        sidebarRow(
+                                            title: tag,
+                                            count: count,
+                                            isActive: activeTag == tag
+                                        ) {
+                                            activeTag = (activeTag == tag) ? nil : tag
+                                        }
+                                        .contextMenu {
+                                            Button("Rename…") {
+                                                renameDraft = tag
+                                                pendingRenameTag = tag
+                                            }
+                                            Button("Delete tag", role: .destructive) {
+                                                pendingTagDelete = tag
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -187,6 +242,53 @@ struct LibraryView: View {
         .sheet(isPresented: $showIllustrationStyle) {
             IllustrationStyleSheet()
         }
+        .sheet(isPresented: Binding(
+            get: { pendingRenameTag != nil },
+            set: { if !$0 { pendingRenameTag = nil } }
+        )) {
+            RenameTagSheet(
+                original: pendingRenameTag ?? "",
+                draft: $renameDraft,
+                onCancel: { pendingRenameTag = nil },
+                onSave: {
+                    let source = pendingRenameTag ?? ""
+                    let target = renameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                    pendingRenameTag = nil
+                    performTagRename(from: source, to: target)
+                }
+            )
+        }
+        .confirmationDialog(
+            "Delete this tag?",
+            isPresented: Binding(
+                get: { pendingTagDelete != nil },
+                set: { if !$0 { pendingTagDelete = nil } }
+            ),
+            presenting: pendingTagDelete
+        ) { tag in
+            Button("Delete tag", role: .destructive) { performTagDelete(tag) }
+            Button("Cancel", role: .cancel) { pendingTagDelete = nil }
+        } message: { tag in
+            Text("Removes \u{201C}\(tag)\u{201D} from every entry that has it. Your entries are not deleted.")
+        }
+    }
+
+    private func sectionHeader(title: String, expanded: Binding<Bool>) -> some View {
+        Button {
+            withAnimation(.snappy(duration: 0.18)) { expanded.wrappedValue.toggle() }
+        } label: {
+            HStack {
+                Eyebrow(text: title)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .regular))
+                    .foregroundColor(DS.muted)
+                    .rotationEffect(.degrees(expanded.wrappedValue ? 0 : -90))
+            }
+            .padding(.horizontal, 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func sidebarRow(
@@ -233,7 +335,9 @@ struct LibraryView: View {
     }
 
     private var toolbarEyebrow: String {
+        if let fam = activeFamily, let tag = activeTag { return "Family · \(fam) · Tag · \(tag)" }
         if let fam = activeFamily { return "Family · \(fam)" }
+        if let tag = activeTag { return "Tag · \(tag)" }
         switch activeFilter {
         case .recent: return "Collection · Recent"
         case .pinned: return "Collection · Pinned"
@@ -243,6 +347,7 @@ struct LibraryView: View {
 
     private var toolbarTitle: String {
         if let fam = activeFamily { return fam }
+        if let tag = activeTag { return tag }
         switch activeFilter {
         case .recent: return "Recent"
         case .pinned: return "Pinned"
@@ -386,8 +491,12 @@ struct LibraryView: View {
                     entries = fetched
                     recentIds = Self.computeRecentIds(fetched)
                     familyCounts = Self.computeFamilyCounts(fetched)
+                    tagCounts = Self.computeTagCounts(fetched)
                     if let fam = activeFamily, !fetched.contains(where: { $0.identification.family == fam }) {
                         activeFamily = nil
+                    }
+                    if let tag = activeTag, !fetched.contains(where: { $0.tags.contains(tag) }) {
+                        activeTag = nil
                     }
                     if activeFilter == .pinned, !fetched.contains(where: { $0.pinned }) {
                         activeFilter = .all
@@ -398,6 +507,35 @@ struct LibraryView: View {
                 }
             } catch {
                 await MainActor.run { isLoading = false }
+            }
+        }
+    }
+
+    private func performTagRename(from source: String, to target: String) {
+        guard !source.isEmpty, !target.isEmpty, source != target else { return }
+        Task {
+            do {
+                try await DatabaseService.shared.renameTag(from: source, to: target)
+                await MainActor.run {
+                    if activeTag == source { activeTag = target }
+                    reload()
+                }
+            } catch {
+                // Silent — tag admin is best-effort.
+            }
+        }
+    }
+
+    private func performTagDelete(_ tag: String) {
+        Task {
+            do {
+                try await DatabaseService.shared.deleteTag(tag)
+                await MainActor.run {
+                    if activeTag == tag { activeTag = nil }
+                    reload()
+                }
+            } catch {
+                // Silent — tag admin is best-effort.
             }
         }
     }
@@ -762,5 +900,62 @@ struct MenuRow: View {
     private var textColor: Color {
         if disabled { return DS.muted }
         return destructive ? DS.rust : DS.ink
+    }
+}
+
+// Sheet for renaming a tag across every entry that has it. Disables Save
+// when the input is empty or unchanged so accidental Returns don't no-op.
+private struct RenameTagSheet: View {
+    let original: String
+    @Binding var draft: String
+    var onCancel: () -> Void
+    var onSave: () -> Void
+
+    @FocusState private var focused: Bool
+
+    private var trimmed: String {
+        draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSave: Bool {
+        !trimmed.isEmpty && trimmed != original
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Eyebrow(text: "Rename tag")
+            Text(original)
+                .font(DS.serif(20))
+                .foregroundColor(DS.ink)
+
+            TextField("", text: $draft)
+                .textFieldStyle(.plain)
+                .focused($focused)
+                .font(DS.sans(13))
+                .foregroundColor(DS.ink)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(DS.paperDeep)
+                .overlay(Rectangle().stroke(focused ? DS.ink : DS.hairline, lineWidth: 1))
+                .onSubmit { if canSave { onSave() } }
+                .onAppear { focused = true }
+
+            Text("Updates every entry that has this tag.")
+                .font(DS.sans(11))
+                .tracking(0.4)
+                .foregroundColor(DS.muted)
+
+            HStack {
+                Spacer()
+                Button("Cancel", action: onCancel)
+                    .buttonStyle(GhostButtonStyle())
+                Button("Save", action: onSave)
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(!canSave)
+            }
+        }
+        .padding(28)
+        .frame(width: 420)
+        .background(DS.paper)
     }
 }
