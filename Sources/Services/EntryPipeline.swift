@@ -30,6 +30,28 @@ enum EntryPipelineError: Error, LocalizedError {
 
 protocol IdentifierPort: Sendable {
     func identify(photoPath: String) async throws -> IdentificationResult
+    func reidentify(
+        photoPath: String,
+        userCommonName: String?,
+        userScientificName: String?
+    ) async throws -> IdentificationResult
+}
+
+private struct ReidentifyUnimplemented: Error, LocalizedError {
+    var errorDescription: String? { "reidentify is not implemented in this identifier." }
+}
+
+extension IdentifierPort {
+    // Default so existing test fakes keep compiling. Real GemmaActor
+    // overrides this; tests that exercise the correction flow can override
+    // selectively in their fake.
+    func reidentify(
+        photoPath: String,
+        userCommonName: String?,
+        userScientificName: String?
+    ) async throws -> IdentificationResult {
+        throw ReidentifyUnimplemented()
+    }
 }
 
 protocol IllustratorPort: Sendable {
@@ -170,6 +192,68 @@ actor EntryPipeline {
             entryId: entryId,
             identification: identification,
             persistFailureToEntry: true
+        )
+    }
+
+    // Gemma-only correction. Re-runs Gemma with the user-supplied common /
+    // scientific name as authoritative, persists the corrected
+    // identification, and returns the new result. Used by the import flow
+    // (which has no illustration yet — FLUX runs on the subsequent Compose
+    // step) and as the first leg of `correctIdentification`.
+    @discardableResult
+    func applyCorrectedIdentification(
+        entryId: UUID,
+        userCommonName: String?,
+        userScientificName: String?
+    ) async throws -> IdentificationResult {
+        guard var entry = try await deps.db.fetchEntry(id: entryId.uuidString) else {
+            throw EntryPipelineError.entryNotFound
+        }
+
+        let workingPath = Storage.current.workingURL(for: entry).path
+        let identifier = deps.identifier
+        let result: IdentificationResult
+        do {
+            result = try await deps.lease.withIdentify {
+                try await identifier.reidentify(
+                    photoPath: workingPath,
+                    userCommonName: userCommonName,
+                    userScientificName: userScientificName
+                )
+            }
+        } catch {
+            throw EntryPipelineError.identifyFailed(error.localizedDescription)
+        }
+
+        entry.setIdentification(.success(result))
+        try await deps.db.saveEntry(entry)
+        return result
+    }
+
+    // User-corrected identification with downstream re-illustration.
+    // Persists the corrected identification BEFORE FLUX so a FLUX failure
+    // preserves the correction; failure handling matches `regenerate`
+    // (user-initiated, never marks the entry as failed). Used by the entry
+    // detail panel where an illustration already exists and must be
+    // refreshed.
+    func correctIdentification(
+        entryId: UUID,
+        userCommonName: String?,
+        userScientificName: String?
+    ) async throws {
+        let result = try await applyCorrectedIdentification(
+            entryId: entryId,
+            userCommonName: userCommonName,
+            userScientificName: userScientificName
+        )
+        guard var entry = try await deps.db.fetchEntry(id: entryId.uuidString) else {
+            throw EntryPipelineError.entryNotFound
+        }
+        try await runIllustration(
+            on: &entry,
+            entryId: entryId,
+            identification: result,
+            persistFailureToEntry: false
         )
     }
 

@@ -16,6 +16,7 @@
 		679B84E8332AE3F6CAA57B5F /* Flux2Core in Frameworks */ = {isa = PBXBuildFile; productRef = 0897C85BE5CCC2BA7E850192 /* Flux2Core */; };
 		6C61578CB133CF9A594F6B2C /* PlateCompositor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C80FEE2509F98204617501E /* PlateCompositor.swift */; };
 		6E6C8F3F950AF9C07C6E8B45 /* IllustrationStyleSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CF94C79E3BCCF304A52A8BC /* IllustrationStyleSheet.swift */; };
+		C00C00C0010111EAFEED0001 /* CorrectIdentificationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00C00C0010111EAFEED0002 /* CorrectIdentificationSheet.swift */; };
 		7176A18571C50BA96CFA2C9C /* Entry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11AFF4097CF8FA255A915845 /* Entry.swift */; };
 		75016E2CD1160953B2AFA764 /* SystemCapability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E7E03636E3189067354BDF7 /* SystemCapability.swift */; };
 		7C64DEEF0FAD89393A62A278 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B967B310FF31D71376E434A8 /* ContentView.swift */; };
@@ -57,6 +58,7 @@
 		4E36A30CE3C22D25611D043F /* Identifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Identifier.swift; sourceTree = "<group>"; };
 		57FDE4D6B25BDAE739421AAC /* FluxActor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FluxActor.swift; sourceTree = "<group>"; };
 		5CF94C79E3BCCF304A52A8BC /* IllustrationStyleSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IllustrationStyleSheet.swift; sourceTree = "<group>"; };
+		C00C00C0010111EAFEED0002 /* CorrectIdentificationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CorrectIdentificationSheet.swift; sourceTree = "<group>"; };
 		5F3849A5EFBD81B6DE796D26 /* Naturista.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Naturista.entitlements; sourceTree = "<group>"; };
 		6BB4C187F34ACDF049664D78 /* Naturista.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Naturista.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6C80FEE2509F98204617501E /* PlateCompositor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlateCompositor.swift; sourceTree = "<group>"; };
@@ -118,6 +120,7 @@
 			isa = PBXGroup;
 			children = (
 				B967B310FF31D71376E434A8 /* ContentView.swift */,
+				C00C00C0010111EAFEED0002 /* CorrectIdentificationSheet.swift */,
 				8923C286130387CA6D6A0535 /* DesignSystem.swift */,
 				3F3DDF8BBC226266CE81F052 /* EntryDetailView.swift */,
 				CB9119DE66C094D14D34AFAE /* EntryRowView.swift */,
@@ -289,6 +292,7 @@
 			files = (
 				1E6AF8ECE42F9B09EC24A9BA /* AppDelegate.swift in Sources */,
 				7C64DEEF0FAD89393A62A278 /* ContentView.swift in Sources */,
+				C00C00C0010111EAFEED0001 /* CorrectIdentificationSheet.swift in Sources */,
 				A42055F4F7F9120036CD716E /* DatabaseService.swift in Sources */,
 				41094921254A75610859A08B /* DesignSystem.swift in Sources */,
 				7176A18571C50BA96CFA2C9C /* Entry.swift in Sources */,

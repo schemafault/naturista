@@ -44,7 +44,32 @@ actor GemmaActor {
         // the defer block, leaving the KV cache outside the pool. This
         // structure guarantees the deallocation ordering.
         defer { MLX.Memory.clearCache() }
-        let raw = try await runOnce(photoPath: photoPath)
+        let raw = try await runOnce(
+            photoPath: photoPath,
+            systemPrompt: Self.systemPrompt,
+            userPrompt: Self.userPrompt
+        )
+        return try Self.parseAndValidate(raw)
+    }
+
+    // User-corrected re-identification. Treats the user-supplied common /
+    // scientific name as authoritative, re-derives family / evidence /
+    // confusion-set against the corrected species, and re-emits the
+    // photo-derived pose / colors / setting fields from this image.
+    func reidentify(
+        photoPath: String,
+        userCommonName: String?,
+        userScientificName: String?
+    ) async throws -> IdentificationResult {
+        defer { MLX.Memory.clearCache() }
+        let raw = try await runOnce(
+            photoPath: photoPath,
+            systemPrompt: Self.correctionSystemPrompt,
+            userPrompt: Self.correctionUserPrompt(
+                commonName: userCommonName,
+                scientificName: userScientificName
+            )
+        )
         return try Self.parseAndValidate(raw)
     }
 
@@ -72,12 +97,16 @@ actor GemmaActor {
         MLX.Memory.clearCache()
     }
 
-    private func runOnce(photoPath: String) async throws -> String {
+    private func runOnce(
+        photoPath: String,
+        systemPrompt: String,
+        userPrompt: String
+    ) async throws -> String {
         let model = GemmaModelStore.shared.selected
         let container = try await ensureContainer(for: model)
         let session = ChatSession(
             container,
-            instructions: Self.systemPrompt,
+            instructions: systemPrompt,
             generateParameters: GenerateParameters(maxTokens: 2048, temperature: 0),
             // Disable ChatSession's default 512×512 pre-resize so the
             // model's own preprocessor sets the resolution (matching
@@ -85,7 +114,7 @@ actor GemmaActor {
             processing: UserInput.Processing()
         )
         return try await session.respond(
-            to: Self.userPrompt,
+            to: userPrompt,
             image: .url(URL(fileURLWithPath: photoPath))
         )
     }
@@ -161,6 +190,44 @@ actor GemmaActor {
 
     private static let userPrompt =
         "Identify the subject of this image. Provide your best assessment with supporting visual evidence."
+
+    // Shares the same JSON schema and style rules as `systemPrompt`, but
+    // flips the stance: the user has corrected the identification, so the
+    // species is given and Gemma re-derives the consistent context. Kept
+    // as a static so Gemma's KV cache can hit on repeated corrections in
+    // the same session.
+    private static let correctionSystemPrompt = systemPrompt + """
+
+
+        CORRECTION MODE: The user has provided a corrected identification for the subject. Treat their input as authoritative for top_candidate.common_name and top_candidate.scientific_name. If only one of those fields was supplied, infer the other from your taxonomic knowledge.
+
+        Re-derive family, kingdom, visible_evidence, missing_evidence, and safety_note to be CONSISTENT with the user-supplied species — call out features that match it and features that would be missing or unexpected. Populate alternatives[] with species commonly confused with the corrected species (a confusion set), not with rival identifications.
+
+        Set model_confidence to "high" since the species is user-confirmed; reserve "medium" or "low" only if the user-supplied common and scientific names refer to different species — in that case prefer the scientific name and note the conflict in safety_note.
+
+        The pose_description, color_palette, and setting_description fields describe THIS PHOTOGRAPH and should be re-derived from the image as in normal mode — they do not depend on the species.
+        """
+
+    private static func correctionUserPrompt(
+        commonName: String?,
+        scientificName: String?
+    ) -> String {
+        let common = commonName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let scientific = scientificName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasCommon = !(common?.isEmpty ?? true)
+        let hasScientific = !(scientific?.isEmpty ?? true)
+        switch (hasCommon, hasScientific) {
+        case (true, true):
+            return "The user states this is \"\(common!)\" (Latin: \(scientific!)). Re-identify the subject of this image under that correction and produce the JSON response."
+        case (true, false):
+            return "The user states the common name is \"\(common!)\". Infer the scientific name from your taxonomic knowledge and re-identify the subject of this image under that correction. Produce the JSON response."
+        case (false, true):
+            return "The user states the scientific name is \"\(scientific!)\". Infer the common name from your taxonomic knowledge and re-identify the subject of this image under that correction. Produce the JSON response."
+        case (false, false):
+            // Caller should have gated this; fall back to vanilla phrasing.
+            return userPrompt
+        }
+    }
 
     // MARK: - Parsing
 

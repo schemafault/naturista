@@ -11,10 +11,14 @@ struct EntryDetailView: View {
     @State private var imageRefreshID = UUID()
     @State private var isRetrying = false
     @State private var isRecomposing = false
+    @State private var isCorrecting = false
     @State private var isExporting = false
     @State private var isDeleting = false
     @State private var showDeleteConfirm = false
     @State private var showNotes = false
+    @State private var showCorrectionSheet = false
+    @State private var correctionDraftCommon = ""
+    @State private var correctionDraftScientific = ""
     @State private var pipelineError: String?
 
     enum PlateTab { case plate, photo }
@@ -47,6 +51,15 @@ struct EntryDetailView: View {
         .onAppear { updateWindowTitle() }
         .sheet(isPresented: $showNotes) {
             NotesEditor(entry: $entry, onSave: persistEntry)
+        }
+        .sheet(isPresented: $showCorrectionSheet) {
+            CorrectIdentificationSheet(
+                commonName: $correctionDraftCommon,
+                scientificName: $correctionDraftScientific,
+                onCancel: { showCorrectionSheet = false },
+                onSave: submitCorrection,
+                onAppearPreload: { Task { await GemmaActor.shared.preload() } }
+            )
         }
         .confirmationDialog(
             "Delete this plate?",
@@ -175,16 +188,29 @@ struct EntryDetailView: View {
     private var sidePanel: some View {
         let id = entry.identification
         return VStack(alignment: .leading, spacing: 28) {
-            VStack(alignment: .leading, spacing: 4) {
-                Eyebrow(text: "Identification")
-                Text(id.commonName ?? "Unidentified")
-                    .font(DS.serif(26, weight: .regular))
-                    .foregroundColor(DS.ink)
-                if let scientific = id.scientificName, !scientific.isEmpty {
-                    Text(scientific)
-                        .font(DS.serif(15, italic: true))
-                        .foregroundColor(DS.inkSoft)
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Eyebrow(text: "Identification")
+                    Text(id.commonName ?? "Unidentified")
+                        .font(DS.serif(26, weight: .regular))
+                        .foregroundColor(DS.ink)
+                    if let scientific = id.scientificName, !scientific.isEmpty {
+                        Text(scientific)
+                            .font(DS.serif(15, italic: true))
+                            .foregroundColor(DS.inkSoft)
+                    }
                 }
+                Spacer(minLength: 0)
+                Button(action: startCorrection) {
+                    HStack(spacing: 6) {
+                        if isCorrecting { ProgressView().controlSize(.small) }
+                        Image(systemName: "pencil")
+                            .font(.system(size: 11, weight: .regular))
+                        Text("Edit ID")
+                    }
+                }
+                .buttonStyle(QuietButtonStyle())
+                .disabled(isCorrecting || isRetrying || isRecomposing || isDeleting)
             }
 
             VStack(alignment: .leading, spacing: 0) {
@@ -274,7 +300,7 @@ struct EntryDetailView: View {
                         }
                     }
                     .buttonStyle(QuietButtonStyle())
-                    .disabled(isRetrying || isRecomposing || isDeleting)
+                    .disabled(isRetrying || isRecomposing || isCorrecting || isDeleting)
 
                     Button(action: regenerateIllustration) {
                         HStack(spacing: 6) {
@@ -283,7 +309,7 @@ struct EntryDetailView: View {
                         }
                     }
                     .buttonStyle(QuietButtonStyle())
-                    .disabled(entry.identification.result == nil || isRetrying || isRecomposing || isDeleting)
+                    .disabled(entry.identification.result == nil || isRetrying || isRecomposing || isCorrecting || isDeleting)
                 }
                 Button(role: .destructive) { showDeleteConfirm = true } label: {
                     HStack(spacing: 6) {
@@ -292,7 +318,7 @@ struct EntryDetailView: View {
                     }
                 }
                 .buttonStyle(GhostButtonStyle())
-                .disabled(isDeleting || isRetrying || isRecomposing)
+                .disabled(isDeleting || isRetrying || isRecomposing || isCorrecting)
                 if let err = pipelineError {
                     Text(err)
                         .font(DS.sans(11))
@@ -429,6 +455,53 @@ struct EntryDetailView: View {
                 await MainActor.run {
                     pipelineError = error.localizedDescription
                     isDeleting = false
+                }
+            }
+        }
+    }
+
+    private func startCorrection() {
+        // Pre-fill drafts with the current identification so the user edits
+        // rather than retypes. Empty defaults if the entry has no result yet
+        // (rare — the Edit button is hidden in that flow path, but defensive).
+        correctionDraftCommon = entry.identification.commonName ?? ""
+        correctionDraftScientific = entry.identification.scientificName ?? ""
+        showCorrectionSheet = true
+    }
+
+    private func submitCorrection() {
+        guard let entryId = UUID(uuidString: entry.id) else { return }
+        let trimmedCommon = correctionDraftCommon.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedScientific = correctionDraftScientific.trimmingCharacters(in: .whitespacesAndNewlines)
+        let common: String? = trimmedCommon.isEmpty ? nil : trimmedCommon
+        let scientific: String? = trimmedScientific.isEmpty ? nil : trimmedScientific
+        guard common != nil || scientific != nil else { return }
+
+        showCorrectionSheet = false
+        isCorrecting = true
+        pipelineError = nil
+        Task {
+            do {
+                try await EntryPipeline.production.correctIdentification(
+                    entryId: entryId,
+                    userCommonName: common,
+                    userScientificName: scientific
+                )
+                if let updated = try await DatabaseService.shared.fetchEntry(id: entry.id) {
+                    await MainActor.run {
+                        entry = updated
+                        imageRefreshID = UUID()
+                        isCorrecting = false
+                        onUpdated?(updated)
+                        updateWindowTitle()
+                    }
+                } else {
+                    await MainActor.run { isCorrecting = false }
+                }
+            } catch {
+                await MainActor.run {
+                    pipelineError = error.localizedDescription
+                    isCorrecting = false
                 }
             }
         }

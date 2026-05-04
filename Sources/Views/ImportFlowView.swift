@@ -14,6 +14,10 @@ struct ImportFlowView: View {
     @State private var identification: IdentificationResult?
     @State private var identificationError: String?
     @State private var pipelineError: String?
+    @State private var isCorrecting = false
+    @State private var showCorrectionSheet = false
+    @State private var correctionDraftCommon = ""
+    @State private var correctionDraftScientific = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,6 +52,15 @@ struct ImportFlowView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(DS.paper)
         .onAppear { NSApp.windows.first?.title = "Naturista — New Entry" }
+        .sheet(isPresented: $showCorrectionSheet) {
+            CorrectIdentificationSheet(
+                commonName: $correctionDraftCommon,
+                scientificName: $correctionDraftScientific,
+                onCancel: { showCorrectionSheet = false },
+                onSave: submitCorrection,
+                onAppearPreload: { Task { await GemmaActor.shared.preload() } }
+            )
+        }
     }
 
     // MARK: - Top bar
@@ -157,10 +170,22 @@ struct ImportFlowView: View {
                         Text("Compose plate")
                     }
                     .buttonStyle(PrimaryButtonStyle())
-                    .disabled(identification == nil)
+                    .disabled(identification == nil || isCorrecting)
 
                     Button("Discard", action: discardImport)
                         .buttonStyle(QuietButtonStyle())
+                        .disabled(isCorrecting)
+
+                    Button(action: startCorrection) {
+                        HStack(spacing: 6) {
+                            if isCorrecting { ProgressView().controlSize(.small) }
+                            Image(systemName: "pencil")
+                                .font(.system(size: 11, weight: .regular))
+                            Text(isCorrecting ? "Re-identifying…" : "Edit ID")
+                        }
+                    }
+                    .buttonStyle(QuietButtonStyle())
+                    .disabled(identification == nil || isCorrecting)
                 }
                 .padding(.top, 8)
 
@@ -269,6 +294,43 @@ struct ImportFlowView: View {
                 await MainActor.run {
                     pipelineError = error.localizedDescription
                     stage = .identified
+                }
+            }
+        }
+    }
+
+    private func startCorrection() {
+        correctionDraftCommon = identification?.topCandidate.commonName ?? ""
+        correctionDraftScientific = identification?.topCandidate.scientificName ?? ""
+        showCorrectionSheet = true
+    }
+
+    private func submitCorrection() {
+        guard let entry = entry, let entryId = UUID(uuidString: entry.id) else { return }
+        let trimmedCommon = correctionDraftCommon.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedScientific = correctionDraftScientific.trimmingCharacters(in: .whitespacesAndNewlines)
+        let common: String? = trimmedCommon.isEmpty ? nil : trimmedCommon
+        let scientific: String? = trimmedScientific.isEmpty ? nil : trimmedScientific
+        guard common != nil || scientific != nil else { return }
+
+        showCorrectionSheet = false
+        isCorrecting = true
+        pipelineError = nil
+        Task {
+            do {
+                let result = try await EntryPipeline.production.applyCorrectedIdentification(
+                    entryId: entryId,
+                    userCommonName: common,
+                    userScientificName: scientific
+                )
+                await MainActor.run {
+                    identification = result
+                    isCorrecting = false
+                }
+            } catch {
+                await MainActor.run {
+                    pipelineError = error.localizedDescription
+                    isCorrecting = false
                 }
             }
         }
