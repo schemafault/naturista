@@ -4,6 +4,7 @@ private let pageSize = 16
 
 struct LibraryView: View {
     let reloadToken: UUID
+    @Binding var page: Int
     let onOpen: (Entry) -> Void
     let onImport: () -> Void
     var onRequestRegenerate: ((Entry) -> Void)? = nil
@@ -14,7 +15,6 @@ struct LibraryView: View {
     @State private var entries: [Entry] = []
     @State private var isLoading = false
     @State private var query = ""
-    @State private var page = 0
     @State private var activeFamily: String? = nil
     @State private var activeFilter: CollectionFilter = .all
     @State private var showIllustrationStyle = false

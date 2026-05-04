@@ -18,6 +18,7 @@ enum NavRoute: Equatable {
 struct ContentView: View {
     @State private var route: NavRoute = .library
     @State private var libraryReloadToken = UUID()
+    @State private var libraryPage: Int = 0
     @State private var pendingDelete: Entry? = nil
     @State private var pipelineError: String? = nil
 
@@ -30,6 +31,7 @@ struct ContentView: View {
                 case .library:
                     LibraryView(
                         reloadToken: libraryReloadToken,
+                        page: $libraryPage,
                         onOpen: { route = .detail($0) },
                         onImport: { route = .importFlow },
                         onRequestRegenerate: regenerateFromLibrary,
