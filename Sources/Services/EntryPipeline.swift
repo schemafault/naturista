@@ -55,7 +55,24 @@ extension IdentifierPort {
 }
 
 protocol IllustratorPort: Sendable {
-    func generate(identification: IdentificationResult, entryId: UUID) async throws -> String
+    func generate(
+        identification: IdentificationResult,
+        entryId: UUID,
+        referencePhotoPath: String?
+    ) async throws -> String
+}
+
+extension IllustratorPort {
+    // Default keeps existing test fakes that only implement the
+    // text-to-image path compiling. Production FluxActor exposes the
+    // full signature directly.
+    func generate(identification: IdentificationResult, entryId: UUID) async throws -> String {
+        try await generate(
+            identification: identification,
+            entryId: entryId,
+            referencePhotoPath: nil
+        )
+    }
 }
 
 // Encodes the GPU-residency invariant in one place: identify work runs
@@ -160,7 +177,12 @@ actor EntryPipeline {
     // and refreshes the thumbnail. Used by both "compose plate after
     // import" and "retry after a previous failure" — the entry's current
     // state determines what work runs.
-    func illustrate(entryId: UUID) async throws {
+    //
+    // `preserveLayout` routes FLUX to image-to-image with the entry's
+    // working photograph as a visual reference, so the illustration
+    // borrows composition / pose from the photo. Roughly 1.5–2× slower
+    // per generate; the UI labels it as such so users opt in knowingly.
+    func illustrate(entryId: UUID, preserveLayout: Bool = false) async throws {
         guard var entry = try await deps.db.fetchEntry(id: entryId.uuidString) else {
             throw EntryPipelineError.entryNotFound
         }
@@ -187,10 +209,15 @@ actor EntryPipeline {
             throw EntryPipelineError.missingIdentification
         }
 
+        let referencePhotoPath = preserveLayout
+            ? Storage.current.workingURL(for: entry).path
+            : nil
+
         try await runIllustration(
             on: &entry,
             entryId: entryId,
             identification: identification,
+            referencePhotoPath: referencePhotoPath,
             persistFailureToEntry: true
         )
     }
@@ -253,6 +280,7 @@ actor EntryPipeline {
             on: &entry,
             entryId: entryId,
             identification: result,
+            referencePhotoPath: nil,
             persistFailureToEntry: false
         )
     }
@@ -264,7 +292,10 @@ actor EntryPipeline {
     // does NOT mark userStatus="failed" (this is a user-initiated retry,
     // not a fresh pipeline run; we don't want to pollute the entry with
     // a failure marker just because the user clicked Regenerate).
-    func regenerate(entryId: UUID) async throws {
+    //
+    // `preserveLayout` mirrors `illustrate(...)`: routes FLUX to img2img
+    // with the entry's working photograph as a visual reference.
+    func regenerate(entryId: UUID, preserveLayout: Bool = false) async throws {
         guard var entry = try await deps.db.fetchEntry(id: entryId.uuidString) else {
             throw EntryPipelineError.entryNotFound
         }
@@ -272,10 +303,15 @@ actor EntryPipeline {
             throw EntryPipelineError.missingIdentification
         }
 
+        let referencePhotoPath = preserveLayout
+            ? Storage.current.workingURL(for: entry).path
+            : nil
+
         try await runIllustration(
             on: &entry,
             entryId: entryId,
             identification: identification,
+            referencePhotoPath: referencePhotoPath,
             persistFailureToEntry: false
         )
     }
@@ -303,6 +339,7 @@ actor EntryPipeline {
         on entry: inout Entry,
         entryId: UUID,
         identification: IdentificationResult,
+        referencePhotoPath: String?,
         persistFailureToEntry: Bool
     ) async throws {
         let illustrator = deps.illustrator
@@ -310,7 +347,8 @@ actor EntryPipeline {
             let illustrationPath = try await deps.lease.withIllustrate {
                 try await illustrator.generate(
                     identification: identification,
-                    entryId: entryId
+                    entryId: entryId,
+                    referencePhotoPath: referencePhotoPath
                 )
             }
             entry.illustrationFilename = URL(fileURLWithPath: illustrationPath).lastPathComponent

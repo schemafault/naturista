@@ -732,7 +732,7 @@ private struct EntryContextMenuView: View {
     }
 }
 
-private struct MenuRow: View {
+struct MenuRow: View {
     let title: String
     var destructive: Bool = false
     var disabled: Bool = false

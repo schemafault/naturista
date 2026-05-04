@@ -18,6 +18,7 @@ struct ImportFlowView: View {
     @State private var showCorrectionSheet = false
     @State private var correctionDraftCommon = ""
     @State private var correctionDraftScientific = ""
+    @State private var preserveLayout = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -165,6 +166,9 @@ struct ImportFlowView: View {
                     IdentificationLoadingView()
                 }
 
+                preserveLayoutToggle
+                    .padding(.top, 4)
+
                 HStack(spacing: 10) {
                     Button(action: composePlate) {
                         Text("Compose plate")
@@ -211,6 +215,47 @@ struct ImportFlowView: View {
         }
     }
 
+    // MARK: - Preserve-layout toggle
+
+    private var preserveLayoutToggle: some View {
+        Button(action: {
+            guard identification != nil, !isCorrecting else { return }
+            preserveLayout.toggle()
+        }) {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    Rectangle()
+                        .stroke(preserveLayout ? DS.ink : DS.hairline, lineWidth: 1)
+                        .frame(width: 14, height: 14)
+                    if preserveLayout {
+                        Rectangle()
+                            .fill(DS.ink)
+                            .frame(width: 7, height: 7)
+                    }
+                }
+                .padding(.top, 3)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 8) {
+                        Text("Match photograph composition")
+                            .font(DS.sans(13, weight: preserveLayout ? .semibold : .medium))
+                            .foregroundColor(DS.ink)
+                        MonoLabel(text: "MUCH SLOWER", size: 9, color: DS.amber)
+                    }
+                    Text("Uses your photograph as a visual reference so the illustration borrows its pose and layout. Generation takes noticeably longer than the default.")
+                        .font(DS.sans(11.5))
+                        .foregroundColor(DS.inkSoft)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: 480, alignment: .leading)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(identification == nil || isCorrecting)
+    }
+
     // MARK: - Stage 4 — Composing plate
 
     private var composingStage: some View {
@@ -218,7 +263,9 @@ struct ImportFlowView: View {
             Text("Composing the plate")
                 .font(DS.serif(26))
                 .foregroundColor(DS.ink)
-            Text("The illustration is being drawn and arranged within the plate frame.")
+            Text(preserveLayout
+                 ? "Drawing the illustration with your photograph as a visual reference. This takes longer than the default — please leave the window open."
+                 : "The illustration is being drawn and arranged within the plate frame.")
                 .font(DS.sans(13))
                 .foregroundColor(DS.inkSoft)
                 .frame(maxWidth: 540, alignment: .leading)
@@ -286,9 +333,13 @@ struct ImportFlowView: View {
         guard let entry = entry, let entryId = UUID(uuidString: entry.id) else { return }
         stage = .composing
         pipelineError = nil
+        let useReferencePhoto = preserveLayout
         Task {
             do {
-                try await EntryPipeline.production.illustrate(entryId: entryId)
+                try await EntryPipeline.production.illustrate(
+                    entryId: entryId,
+                    preserveLayout: useReferencePhoto
+                )
                 await MainActor.run { onCompleted() }
             } catch {
                 await MainActor.run {

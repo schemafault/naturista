@@ -35,11 +35,24 @@ actor FluxActor {
     private static let steps = 4
     private static let guidance: Float = 1.0
 
+    // Image-to-image runs the same Klein 4B turbo path but with the
+    // user's photograph as a visual reference. The turbo distillation
+    // applies in both modes; we start at the same 4-step budget as
+    // text-to-image and bump only if results are mush. Slightly higher
+    // guidance because the reference image gives the prompt more to
+    // contend with.
+    private static let imageToImageSteps = 6
+    private static let imageToImageGuidance: Float = 1.5
+
     private var pipeline: Flux2Pipeline?
 
     private init() {}
 
-    func generate(identification: IdentificationResult, entryId: UUID) async throws -> String {
+    func generate(
+        identification: IdentificationResult,
+        entryId: UUID,
+        referencePhotoPath: String? = nil
+    ) async throws -> String {
         // ModelLease is the production caller and shuts us down after
         // each illustration, so this defer is mostly a safety net for
         // any future caller that invokes generate() outside the lease.
@@ -60,14 +73,27 @@ actor FluxActor {
         let seed = UInt64.random(in: 0..<UInt64(UInt32.max))
         let image: CGImage
         do {
-            image = try await pipeline.generateTextToImage(
-                prompt: prompt,
-                height: Self.height,
-                width: Self.width,
-                steps: Self.steps,
-                guidance: Self.guidance,
-                seed: seed
-            )
+            if let referencePhotoPath {
+                let reference = try Self.loadCGImage(atPath: referencePhotoPath)
+                image = try await pipeline.generateImageToImage(
+                    prompt: prompt,
+                    images: [reference],
+                    height: Self.height,
+                    width: Self.width,
+                    steps: Self.imageToImageSteps,
+                    guidance: Self.imageToImageGuidance,
+                    seed: seed
+                )
+            } else {
+                image = try await pipeline.generateTextToImage(
+                    prompt: prompt,
+                    height: Self.height,
+                    width: Self.width,
+                    steps: Self.steps,
+                    guidance: Self.guidance,
+                    seed: seed
+                )
+            }
         } catch {
             throw FluxError.generationFailed(error.localizedDescription)
         }
@@ -120,6 +146,15 @@ actor FluxActor {
         case .balanced:     return .balanced
         case .auto:         return capability.physicalMemoryGB >= 48 ? .minimal : .ultraMinimal
         }
+    }
+
+    private static func loadCGImage(atPath path: String) throws -> CGImage {
+        let url = URL(fileURLWithPath: path)
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+            throw FluxError.generationFailed("Could not read reference photo at \(path)")
+        }
+        return image
     }
 
     private static func writePNG(_ image: CGImage, to url: URL) throws {

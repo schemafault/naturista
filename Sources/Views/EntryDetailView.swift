@@ -20,6 +20,8 @@ struct EntryDetailView: View {
     @State private var correctionDraftCommon = ""
     @State private var correctionDraftScientific = ""
     @State private var pipelineError: String?
+    @State private var preserveLayout = false
+    @State private var exportMenuPresented = false
 
     enum PlateTab { case plate, photo }
 
@@ -104,14 +106,23 @@ struct EntryDetailView: View {
                 .buttonStyle(QuietButtonStyle())
                 Button("Notes") { showNotes = true }
                     .buttonStyle(QuietButtonStyle())
-                Button(action: exportPlate) {
+                Button(action: { exportMenuPresented.toggle() }) {
                     HStack(spacing: 6) {
                         if isExporting { ProgressView().controlSize(.small) }
-                        Text("Export PNG")
+                        Text("Export")
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .regular))
+                            .foregroundColor(DS.muted)
                     }
                 }
                 .buttonStyle(QuietButtonStyle())
                 .disabled(entry.illustrationFilename == nil || isExporting)
+                .popover(isPresented: $exportMenuPresented, arrowEdge: .top) {
+                    ExportMenuView(
+                        onExportPlate: { exportMenuPresented = false; exportPlate() },
+                        onExportImage: { exportMenuPresented = false; exportImage() }
+                    )
+                }
             }
         }
         .padding(.horizontal, 32)
@@ -292,6 +303,9 @@ struct EntryDetailView: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 Eyebrow(text: "Workspace")
+
+                preserveLayoutToggle
+
                 HStack(spacing: 10) {
                     Button(action: retryPipeline) {
                         HStack(spacing: 6) {
@@ -397,6 +411,48 @@ struct EntryDetailView: View {
         case .other:
             return Text("Identification produced locally. Treat as a reference.")
         }
+    }
+
+    // MARK: - Preserve-layout toggle
+
+    private var preserveLayoutToggle: some View {
+        let busy = isRetrying || isRecomposing || isCorrecting || isDeleting
+        return Button(action: {
+            guard !busy else { return }
+            preserveLayout.toggle()
+        }) {
+            HStack(alignment: .top, spacing: 10) {
+                ZStack {
+                    Rectangle()
+                        .stroke(preserveLayout ? DS.ink : DS.hairline, lineWidth: 1)
+                        .frame(width: 13, height: 13)
+                    if preserveLayout {
+                        Rectangle()
+                            .fill(DS.ink)
+                            .frame(width: 6, height: 6)
+                    }
+                }
+                .padding(.top, 3)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text("Match photograph composition")
+                            .font(DS.sans(12.5, weight: preserveLayout ? .semibold : .medium))
+                            .foregroundColor(DS.ink)
+                        MonoLabel(text: "MUCH SLOWER", size: 9, color: DS.amber)
+                    }
+                    Text("Re-runs FLUX with the original photograph as a visual reference.")
+                        .font(DS.sans(11))
+                        .foregroundColor(DS.inkSoft)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+        .padding(.bottom, 4)
     }
 
     // MARK: - Side effects
@@ -511,9 +567,13 @@ struct EntryDetailView: View {
         guard let entryId = UUID(uuidString: entry.id) else { return }
         isRecomposing = true
         pipelineError = nil
+        let useReferencePhoto = preserveLayout
         Task {
             do {
-                try await EntryPipeline.production.regenerate(entryId: entryId)
+                try await EntryPipeline.production.regenerate(
+                    entryId: entryId,
+                    preserveLayout: useReferencePhoto
+                )
                 if let updated = try await DatabaseService.shared.fetchEntry(id: entry.id) {
                     await MainActor.run {
                         entry = updated
@@ -537,9 +597,13 @@ struct EntryDetailView: View {
         guard let entryId = UUID(uuidString: entry.id) else { return }
         isRetrying = true
         pipelineError = nil
+        let useReferencePhoto = preserveLayout
         Task {
             do {
-                try await EntryPipeline.production.illustrate(entryId: entryId)
+                try await EntryPipeline.production.illustrate(
+                    entryId: entryId,
+                    preserveLayout: useReferencePhoto
+                )
             } catch {
                 await MainActor.run { pipelineError = error.localizedDescription }
             }
@@ -579,6 +643,55 @@ struct EntryDetailView: View {
             }
             isExporting = false
         }
+    }
+
+    private func exportImage() {
+        guard let filename = entry.illustrationFilename else { return }
+        let source = AppPaths.illustrations.appendingPathComponent(filename)
+        guard FileManager.default.fileExists(atPath: source.path) else { return }
+
+        isExporting = true
+        pipelineError = nil
+
+        let panel = NSSavePanel()
+        panel.title = "Export Image"
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = "\(entry.identification.commonName ?? "plate")-image.png"
+        panel.canCreateDirectories = true
+
+        guard panel.runModal() == .OK, let destination = panel.url else {
+            isExporting = false
+            return
+        }
+
+        do {
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try FileManager.default.removeItem(at: destination)
+            }
+            try FileManager.default.copyItem(at: source, to: destination)
+        } catch {
+            pipelineError = "Failed to export: \(error.localizedDescription)"
+        }
+        isExporting = false
+    }
+}
+
+private struct ExportMenuView: View {
+    var onExportPlate: () -> Void
+    var onExportImage: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Eyebrow(text: "Export")
+                .padding(.horizontal, 14)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+            MenuRow(title: "Export plate", action: onExportPlate)
+            MenuRow(title: "Export image", action: onExportImage)
+        }
+        .frame(width: 220)
+        .padding(.bottom, 6)
+        .background(DS.paper)
     }
 }
 
