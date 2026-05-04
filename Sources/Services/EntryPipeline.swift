@@ -35,10 +35,19 @@ protocol IdentifierPort: Sendable {
         userCommonName: String?,
         userScientificName: String?
     ) async throws -> IdentificationResult
+    func identifyWithHint(
+        photoPath: String,
+        hintCommon: String?,
+        hintScientific: String?
+    ) async throws -> IdentificationResult
 }
 
 private struct ReidentifyUnimplemented: Error, LocalizedError {
     var errorDescription: String? { "reidentify is not implemented in this identifier." }
+}
+
+private struct IdentifyWithHintUnimplemented: Error, LocalizedError {
+    var errorDescription: String? { "identifyWithHint is not implemented in this identifier." }
 }
 
 extension IdentifierPort {
@@ -51,6 +60,14 @@ extension IdentifierPort {
         userScientificName: String?
     ) async throws -> IdentificationResult {
         throw ReidentifyUnimplemented()
+    }
+
+    func identifyWithHint(
+        photoPath: String,
+        hintCommon: String?,
+        hintScientific: String?
+    ) async throws -> IdentificationResult {
+        throw IdentifyWithHintUnimplemented()
     }
 }
 
@@ -125,8 +142,16 @@ actor EntryPipeline {
     // best-effort thumbnail, saves the entry, runs Gemma identify, saves
     // again with the result or a failure marker. Returns the final entry
     // either way — callers inspect `.identification.status` to branch UI.
+    //
+    // Optional `hintCommon` / `hintScientific` route through Gemma's soft-
+    // hint path (the user offered a tentative guess on the import screen).
+    // Empty / whitespace-only strings are treated as "no hint".
     @discardableResult
-    func importPhoto(at sourceURL: URL) async throws -> Entry {
+    func importPhoto(
+        at sourceURL: URL,
+        hintCommon: String? = nil,
+        hintScientific: String? = nil
+    ) async throws -> Entry {
         let id = deps.newID().uuidString
         let originalURL = try deps.fileImport.copyOriginal(from: sourceURL, id: id)
 
@@ -158,9 +183,20 @@ actor EntryPipeline {
 
         let workingPath = workingURL.path
         let identifier = deps.identifier
+        let trimmedCommon = hintCommon?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedScientific = hintScientific?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasHint = !(trimmedCommon?.isEmpty ?? true) || !(trimmedScientific?.isEmpty ?? true)
         do {
             let result = try await deps.lease.withIdentify {
-                try await identifier.identify(photoPath: workingPath)
+                if hasHint {
+                    return try await identifier.identifyWithHint(
+                        photoPath: workingPath,
+                        hintCommon: trimmedCommon?.isEmpty == false ? trimmedCommon : nil,
+                        hintScientific: trimmedScientific?.isEmpty == false ? trimmedScientific : nil
+                    )
+                } else {
+                    return try await identifier.identify(photoPath: workingPath)
+                }
             }
             entry.setIdentification(.success(result))
             try await deps.db.saveEntry(entry)

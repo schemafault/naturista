@@ -73,6 +73,27 @@ actor GemmaActor {
         return try Self.parseAndValidate(raw)
     }
 
+    // Pre-identification hint. Unlike `reidentify`, the user is *guessing* —
+    // Gemma should treat the hint as a leading hypothesis but is free to
+    // override when the photo clearly shows otherwise, and must set
+    // model_confidence honestly rather than forcing "high".
+    func identifyWithHint(
+        photoPath: String,
+        hintCommon: String?,
+        hintScientific: String?
+    ) async throws -> IdentificationResult {
+        defer { MLX.Memory.clearCache() }
+        let raw = try await runOnce(
+            photoPath: photoPath,
+            systemPrompt: Self.hintSystemPrompt,
+            userPrompt: Self.hintUserPrompt(
+                commonName: hintCommon,
+                scientificName: hintScientific
+            )
+        )
+        return try Self.parseAndValidate(raw)
+    }
+
     // Best-effort: warm the container so the first identify call doesn't
     // pay the full VLMModelFactory build (which dominates first-call
     // latency for the larger Gemma SKUs). Caller is responsible for
@@ -225,6 +246,43 @@ actor GemmaActor {
             return "The user states the scientific name is \"\(scientific!)\". Infer the common name from your taxonomic knowledge and re-identify the subject of this image under that correction. Produce the JSON response."
         case (false, false):
             // Caller should have gated this; fall back to vanilla phrasing.
+            return userPrompt
+        }
+    }
+
+    // Soft pre-identification hint. The user has offered a guess BEFORE
+    // Gemma has seen the photo, so the addendum has to do two opposing
+    // jobs: lean into the hint when it fits the image (the disambiguation
+    // case — "which oak?") AND override the hint when the photo clearly
+    // shows otherwise (the wrong-guess case). model_confidence is
+    // explicitly NOT pinned to "high" here; it follows what the model
+    // actually believes.
+    private static let hintSystemPrompt = systemPrompt + """
+
+
+        HINT MODE: The user has offered a tentative guess about the subject BEFORE you saw the image. Treat their input as a leading hypothesis to consider first — useful for disambiguating between similar species — but you are NOT bound by it. If the visual evidence in the photograph clearly contradicts the user's guess, identify what you actually see and briefly note the discrepancy in safety_note (e.g. "User suggested X, but the image shows Y because …").
+
+        Set model_confidence honestly based on what the photograph supports — do not force it to "high" just because the user offered a hint. If the photograph genuinely supports the user's guess, return their species; if it's ambiguous between their guess and a close alternative, list the alternative in alternatives[] and pick the better-supported one.
+
+        The pose_description, color_palette, and setting_description fields describe THIS PHOTOGRAPH and should be derived from the image as in normal mode — they do not depend on the hint.
+        """
+
+    private static func hintUserPrompt(
+        commonName: String?,
+        scientificName: String?
+    ) -> String {
+        let common = commonName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let scientific = scientificName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasCommon = !(common?.isEmpty ?? true)
+        let hasScientific = !(scientific?.isEmpty ?? true)
+        switch (hasCommon, hasScientific) {
+        case (true, true):
+            return "The user suspects this may be \"\(common!)\" (Latin: \(scientific!)), but is not certain. Identify the subject of this image — use that as a leading hypothesis but override it if the photograph shows otherwise. Produce the JSON response."
+        case (true, false):
+            return "The user suspects the common name may be \"\(common!)\", but is not certain. Identify the subject of this image — use that as a leading hypothesis but override it if the photograph shows otherwise. Produce the JSON response."
+        case (false, true):
+            return "The user suspects the scientific name may be \"\(scientific!)\", but is not certain. Identify the subject of this image — use that as a leading hypothesis but override it if the photograph shows otherwise. Produce the JSON response."
+        case (false, false):
             return userPrompt
         }
     }

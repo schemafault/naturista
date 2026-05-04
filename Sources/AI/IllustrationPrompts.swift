@@ -23,7 +23,7 @@ enum IllustrationPrompts {
             In the style of Ferdinand Bauer and Pierre-Joseph Redouté — 19th century natural history plates \
             with delicate watercolour washes, fine ink linework, and accurate botanical detail. \
             {subject}. \
-            On plain neutral paper background. No text, no labels, no border.
+            On smooth uninterrupted cream paper, completely blank surface, unmarked margins.
             """,
         .animal: """
             A hand-coloured zoological plate of {scientific_name}, {common_name}, \
@@ -32,7 +32,7 @@ enum IllustrationPrompts {
             19th century natural history with rich watercolour pigments, careful anatomical detail, \
             and a poised lifelike pose. Full colour, never grayscale or sepia. \
             {subject}. \
-            On plain neutral paper background. No text, no labels, no border.
+            On smooth uninterrupted cream paper, completely blank surface, unmarked margins.
             """,
         .fungus: """
             A hand-coloured mycological plate of {scientific_name}, {common_name}, \
@@ -41,7 +41,7 @@ enum IllustrationPrompts {
             soft watercolour with careful attention to gill colour and cap texture, \
             showing the whole specimen alongside a cross-section view. \
             {subject}. \
-            On plain neutral paper background. No text, no labels, no border.
+            On smooth uninterrupted cream paper, completely blank surface, unmarked margins.
             """,
         .other: """
             A hand-painted Dutch Golden Age still-life study of {common_name}, \
@@ -49,7 +49,7 @@ enum IllustrationPrompts {
             In the style of Pieter Claesz and Willem Kalf — chiaroscuro oil painting \
             with warm side lighting, deep shadows, and rich saturated colour. \
             {subject}. \
-            On a dark muted background. No text, no labels, no border.
+            Against a smooth dark muted backdrop, unmarked surface.
             """,
     ]
 

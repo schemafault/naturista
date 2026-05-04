@@ -5,7 +5,7 @@ struct ImportFlowView: View {
     var onCancel: () -> Void
     var onCompleted: () -> Void
 
-    enum Stage { case dropzone, reviewing, identified, composing }
+    enum Stage { case dropzone, preparing, reviewing, identified, composing }
 
     @State private var stage: Stage = .dropzone
     @State private var importedImage: NSImage?
@@ -19,6 +19,9 @@ struct ImportFlowView: View {
     @State private var correctionDraftCommon = ""
     @State private var correctionDraftScientific = ""
     @State private var preserveLayout = false
+    @State private var hintCommon = ""
+    @State private var hintScientific = ""
+    @State private var hintExpanded = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -34,6 +37,7 @@ struct ImportFlowView: View {
                         Group {
                             switch stage {
                             case .dropzone: dropzoneStage
+                            case .preparing: preparingStage
                             case .reviewing: reviewingStage
                             case .identified: identifiedStage
                             case .composing: composingStage
@@ -128,7 +132,89 @@ struct ImportFlowView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: - Stage 2 — Reviewing
+    // MARK: - Stage 2 — Preparing (optional hint)
+
+    private var preparingStage: some View {
+        HStack(alignment: .top, spacing: 48) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Ready to identify")
+                    .font(DS.serif(26))
+                    .foregroundColor(DS.ink)
+                Text("If you have a guess for the subject, you can offer it as a hint. The model will treat it as a starting point but may override it if the photograph clearly shows otherwise.")
+                    .font(DS.sans(13))
+                    .lineSpacing(3)
+                    .foregroundColor(DS.inkSoft)
+                    .frame(maxWidth: 440, alignment: .leading)
+                    .padding(.top, 8)
+
+                hintDisclosure
+                    .padding(.top, 24)
+
+                if hintExpanded {
+                    hintFields
+                        .padding(.top, 14)
+                }
+
+                HStack(spacing: 10) {
+                    Button(action: runIdentification) {
+                        Text("Identify")
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+
+                    Button("Discard", action: discardImport)
+                        .buttonStyle(QuietButtonStyle())
+                }
+                .padding(.top, 24)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            ImportedPhotoCard(image: importedImage)
+                .frame(maxWidth: .infinity)
+        }
+    }
+
+    private var hintDisclosure: some View {
+        Button(action: { hintExpanded.toggle() }) {
+            HStack(spacing: 8) {
+                Image(systemName: hintExpanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 10, weight: .regular))
+                    .foregroundColor(DS.ink)
+                Text("Add a hint to guide identification (optional)")
+                    .font(DS.sans(12.5, weight: .medium))
+                    .tracking(0.24)
+                    .foregroundColor(DS.ink)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var hintFields: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                Eyebrow(text: "Common name", size: 9.5)
+                TextField("e.g. Western redbud", text: $hintCommon)
+                    .textFieldStyle(.plain)
+                    .font(DS.serif(15))
+                    .padding(10)
+                    .background(DS.paperDeep)
+                    .overlay(Rectangle().stroke(DS.hairline, lineWidth: 1))
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Eyebrow(text: "Scientific name", size: 9.5)
+                TextField("e.g. Cercis occidentalis", text: $hintScientific)
+                    .textFieldStyle(.plain)
+                    .font(DS.serif(14, italic: true))
+                    .padding(10)
+                    .background(DS.paperDeep)
+                    .overlay(Rectangle().stroke(DS.hairline, lineWidth: 1))
+            }
+        }
+        .frame(maxWidth: 440, alignment: .leading)
+    }
+
+    // MARK: - Stage 3 — Reviewing
 
     private var reviewingStage: some View {
         HStack(alignment: .top, spacing: 48) {
@@ -153,7 +239,7 @@ struct ImportFlowView: View {
         }
     }
 
-    // MARK: - Stage 3 — Identified
+    // MARK: - Stage 4 — Identified
 
     private var identifiedStage: some View {
         HStack(alignment: .top, spacing: 48) {
@@ -256,7 +342,7 @@ struct ImportFlowView: View {
         .disabled(identification == nil || isCorrecting)
     }
 
-    // MARK: - Stage 4 — Composing plate
+    // MARK: - Stage 5 — Composing plate
 
     private var composingStage: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -296,11 +382,27 @@ struct ImportFlowView: View {
         identificationError = nil
         identification = nil
         pipelineError = nil
+        hintCommon = ""
+        hintScientific = ""
+        hintExpanded = false
+        stage = .preparing
+    }
+
+    private func runIdentification() {
+        guard let url = importedURL else { return }
+        let trimmedCommon = hintCommon.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedScientific = hintScientific.trimmingCharacters(in: .whitespacesAndNewlines)
+        let common: String? = trimmedCommon.isEmpty ? nil : trimmedCommon
+        let scientific: String? = trimmedScientific.isEmpty ? nil : trimmedScientific
         stage = .reviewing
 
         Task {
             do {
-                let entry = try await EntryPipeline.production.importPhoto(at: url)
+                let entry = try await EntryPipeline.production.importPhoto(
+                    at: url,
+                    hintCommon: common,
+                    hintScientific: scientific
+                )
                 await MainActor.run { self.entry = entry }
 
                 switch entry.identification.status {
@@ -431,7 +533,7 @@ private struct Stepper: View {
 
     private func index(for s: ImportFlowView.Stage) -> Int {
         switch s {
-        case .dropzone: return 0
+        case .dropzone, .preparing: return 0
         case .reviewing: return 1
         case .identified, .composing: return 2
         }
