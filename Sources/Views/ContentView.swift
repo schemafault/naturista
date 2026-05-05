@@ -3,13 +3,13 @@ import AppKit
 
 enum NavRoute: Equatable {
     case library
-    case detail(Entry)
+    case detail(Entry, openRegenerate: Bool)
     case importFlow
 
     static func == (lhs: NavRoute, rhs: NavRoute) -> Bool {
         switch (lhs, rhs) {
         case (.library, .library), (.importFlow, .importFlow): return true
-        case let (.detail(a), .detail(b)): return a.id == b.id
+        case let (.detail(a, ar), .detail(b, br)): return a.id == b.id && ar == br
         default: return false
         }
     }
@@ -32,14 +32,15 @@ struct ContentView: View {
                     LibraryView(
                         reloadToken: libraryReloadToken,
                         page: $libraryPage,
-                        onOpen: { route = .detail($0) },
+                        onOpen: { route = .detail($0, openRegenerate: false) },
                         onImport: { route = .importFlow },
                         onRequestRegenerate: regenerateFromLibrary,
                         onRequestDelete: { pendingDelete = $0 }
                     )
-                case .detail(let entry):
+                case .detail(let entry, let openRegenerate):
                     EntryDetailView(
                         entry: entry,
+                        openRegenerateOnAppear: openRegenerate,
                         onBack: { route = .library },
                         onDeleted: {
                             libraryReloadToken = UUID()
@@ -72,16 +73,11 @@ struct ContentView: View {
         }
     }
 
+    // Library's "Regenerate" context-menu action now opens the detail
+    // view with the regenerate options modal already up : keeps every
+    // regenerate path going through the same variant review flow.
     private func regenerateFromLibrary(_ entry: Entry) {
-        guard let entryId = UUID(uuidString: entry.id) else { return }
-        Task {
-            do {
-                try await EntryPipeline.production.regenerate(entryId: entryId)
-                await MainActor.run { libraryReloadToken = UUID() }
-            } catch {
-                await MainActor.run { pipelineError = error.localizedDescription }
-            }
-        }
+        route = .detail(entry, openRegenerate: true)
     }
 
     private func confirmDelete(_ entry: Entry) {

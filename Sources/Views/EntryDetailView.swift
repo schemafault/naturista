@@ -3,6 +3,10 @@ import AppKit
 
 struct EntryDetailView: View {
     @State var entry: Entry
+    // When true, the regenerate options sheet auto-presents on first
+    // appearance. Used by the library's right-click "Regenerate" path
+    // so it lands on the same variant flow as the in-detail button.
+    var openRegenerateOnAppear: Bool = false
     var onBack: () -> Void
     var onDeleted: (() -> Void)? = nil
     var onUpdated: ((Entry) -> Void)? = nil
@@ -60,6 +64,9 @@ struct EntryDetailView: View {
         .onAppear {
             updateWindowTitle()
             loadKnownTags()
+            if openRegenerateOnAppear {
+                showRegenerateOptions = true
+            }
         }
         .sheet(isPresented: $showNotes) {
             NotesEditor(entry: $entry, onSave: persistEntry)
