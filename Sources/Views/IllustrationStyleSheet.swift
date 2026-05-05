@@ -17,6 +17,7 @@ struct IllustrationStyleSheet: View {
 
     @State private var selectedModel: GemmaModel = GemmaModelStore.shared.selected
     @State private var selectedFluxQuant: FluxQuantizationPreference = FluxQuantizationStore.shared.selected
+    @State private var preloadEnabled: Bool = GemmaPreloadStore.shared.enabled
     @State private var isDownloading = false
     @State private var downloadingModel: GemmaModel? = nil
     @State private var modelError: String? = nil
@@ -27,9 +28,11 @@ struct IllustrationStyleSheet: View {
     private var modelChanged: Bool { selectedModel != savedModel }
     private var savedFluxQuant: FluxQuantizationPreference { FluxQuantizationStore.shared.selected }
     private var fluxQuantChanged: Bool { selectedFluxQuant != savedFluxQuant }
+    private var savedPreloadEnabled: Bool { GemmaPreloadStore.shared.enabled }
+    private var preloadChanged: Bool { preloadEnabled != savedPreloadEnabled }
 
     private var isDirty: Bool {
-        if modelChanged || fluxQuantChanged { return true }
+        if modelChanged || fluxQuantChanged || preloadChanged { return true }
         for kingdom in allKingdoms {
             let saved = IllustrationPromptStore.shared.template(for: kingdom)
             if (drafts[kingdom] ?? saved) != saved { return true }
@@ -50,6 +53,8 @@ struct IllustrationStyleSheet: View {
                     modelSection
                     Hairline()
                     fluxQuantizationSection
+                    Hairline()
+                    preloadSection
                 }
                 .padding(.horizontal, 36)
                 .padding(.vertical, 28)
@@ -312,6 +317,35 @@ struct IllustrationStyleSheet: View {
             : FluxQuantizationPreference.ultraMinimal.displayName
     }
 
+    // MARK: - Startup preload toggle
+
+    private var preloadSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                Eyebrow(text: "Startup preload")
+                if preloadChanged {
+                    MonoLabel(text: "MODIFIED", size: 9.5, color: DS.amber)
+                }
+            }
+
+            Text("Warm the identification model in the background at launch so the first identify is instant. Holds the full model resident at idle (≈3–17 GB depending on the selected Gemma). Off by default.")
+                .font(DS.sans(12))
+                .foregroundColor(DS.inkSoft)
+                .lineLimit(3)
+
+            Toggle(isOn: $preloadEnabled) {
+                Text("Preload Gemma at launch")
+                    .font(DS.sans(13, weight: .medium))
+                    .foregroundColor(DS.ink)
+            }
+            .toggleStyle(.switch)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(DS.paperDeep)
+            .overlay(Rectangle().stroke(DS.hairline, lineWidth: 1))
+        }
+    }
+
     @ViewBuilder
     private func modelRow(_ option: GemmaModel) -> some View {
         let isSelected = selectedModel == option
@@ -523,6 +557,7 @@ struct IllustrationStyleSheet: View {
         }
         selectedModel = GemmaModelStore.shared.selected
         selectedFluxQuant = FluxQuantizationStore.shared.selected
+        preloadEnabled = GemmaPreloadStore.shared.enabled
         modelError = nil
     }
 
@@ -577,14 +612,37 @@ struct IllustrationStyleSheet: View {
             // current Gemma subprocess so the next identify spawns a fresh one
             // with the new GEMMA_MODEL_PATH (read lazily via the env closure).
             // Then warm the new model in the background so the next import
-            // doesn't pay the container build — same pattern as launch.
+            // doesn't pay the container build — but only if the user has
+            // opted in to preload (otherwise the just-changed model would
+            // silently sit in RAM).
             if chosen != GemmaModelStore.shared.selected {
                 GemmaModelStore.shared.setSelected(chosen)
                 await GemmaActor.shared.shutdown()
-                Task.detached(priority: .utility) {
-                    try? await ModelLease.shared.withExclusive(.identification) {
-                        await GemmaActor.shared.preload()
+                if GemmaPreloadStore.shared.enabled {
+                    Task.detached(priority: .utility) {
+                        try? await ModelLease.shared.withExclusive(.identification) {
+                            await GemmaActor.shared.preload()
+                        }
                     }
+                }
+            }
+
+            // Persist preload preference. Apply immediately: if just turned
+            // on, warm now (matching launch behavior); if just turned off,
+            // shut down to release RAM right away rather than waiting for
+            // the next launch.
+            let nextPreload = preloadEnabled
+            if nextPreload != GemmaPreloadStore.shared.enabled {
+                GemmaPreloadStore.shared.setEnabled(nextPreload)
+                if nextPreload {
+                    Task.detached(priority: .utility) {
+                        guard GemmaModelStore.shared.selected.isInstalled else { return }
+                        try? await ModelLease.shared.withExclusive(.identification) {
+                            await GemmaActor.shared.preload()
+                        }
+                    }
+                } else {
+                    await GemmaActor.shared.shutdown()
                 }
             }
 

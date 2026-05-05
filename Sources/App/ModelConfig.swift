@@ -255,6 +255,30 @@ final class GemmaModelStore: @unchecked Sendable {
     }
 }
 
+// Whether Gemma should be warmed in the background at launch (and after a
+// model swap) so the first identify is instant. Off by default — preload
+// holds the full model resident at idle, which is multiple GB depending on
+// the selected SKU. UserDefaults-backed.
+final class GemmaPreloadStore: @unchecked Sendable {
+    static let shared = GemmaPreloadStore()
+
+    private let key = "gemma.preloadAtLaunch"
+    private let userDefaults: UserDefaults
+
+    init(userDefaults: UserDefaults = .standard) {
+        self.userDefaults = userDefaults
+    }
+
+    var enabled: Bool {
+        // Defaults to false when the key is absent (object(forKey:) is nil).
+        userDefaults.object(forKey: key) as? Bool ?? false
+    }
+
+    func setEnabled(_ value: Bool) {
+        userDefaults.set(value, forKey: key)
+    }
+}
+
 // Fetches MLX weights from Hugging Face directly via URLSession. No Python
 // venv / hf CLI subprocess — sandbox-eligible, and the only entitlement
 // needed is com.apple.security.network.client. Files land where Python's
