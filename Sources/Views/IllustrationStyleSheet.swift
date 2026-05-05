@@ -71,56 +71,42 @@ struct IllustrationStyleSheet: View {
             }
         }
         .onAppear { loadDrafts() }
-        .confirmationDialog(
-            "Discard unsaved changes?",
+        .confirmModal(
             isPresented: $showCloseConfirm,
-            titleVisibility: .visible
+            title: "Discard unsaved changes?",
+            message: "Your edits to the illustration prompts will be lost.",
+            confirmLabel: "Discard",
+            cancelLabel: "Keep editing",
+            isDestructive: true
         ) {
-            Button("Discard", role: .destructive) { dismiss() }
-            Button("Keep editing", role: .cancel) {}
-        } message: {
-            Text("Your edits to the illustration prompts will be lost.")
+            dismiss()
         }
-        .confirmationDialog(
-            "Reset all four prompts to defaults?",
+        .confirmModal(
             isPresented: $showResetAllConfirm,
-            titleVisibility: .visible
+            title: "Reset all four prompts to defaults?",
+            message: "Custom edits in this sheet will be replaced with the originals. Nothing is saved until you press Save.",
+            confirmLabel: "Reset all",
+            isDestructive: true
         ) {
-            Button("Reset all", role: .destructive) {
-                for kingdom in allKingdoms {
-                    drafts[kingdom] = IllustrationPrompts.defaultTemplate(for: kingdom)
-                    errors[kingdom] = nil
-                }
+            for kingdom in allKingdoms {
+                drafts[kingdom] = IllustrationPrompts.defaultTemplate(for: kingdom)
+                errors[kingdom] = nil
             }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Custom edits in this sheet will be replaced with the originals. Nothing is saved until you press Save.")
         }
-        .confirmationDialog(
-            pendingDelete.map { "Delete \($0.displayName) files?" } ?? "Delete model files?",
-            isPresented: Binding(
-                get: { pendingDelete != nil },
-                set: { if !$0 { pendingDelete = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Delete files", role: .destructive) {
-                if let model = pendingDelete {
-                    pendingDelete = nil
-                    Task { await performDelete(model) }
-                }
-            }
-            Button("Cancel", role: .cancel) { pendingDelete = nil }
-        } message: {
-            if let m = pendingDelete {
-                let isActive = m == GemmaModelStore.shared.selected
+        .confirmModal(
+            item: $pendingDelete,
+            title: { model in "Delete \(model.displayName) files?" },
+            message: { model in
+                let isActive = model == GemmaModelStore.shared.selected
                 let activeNote = isActive
                     ? " It is your current model, so the next identification will trigger a re-download."
                     : ""
-                Text("Frees ~\(formatGB(m.approxSizeGB)) of disk. The model stays in this list and can be re-downloaded later.\(activeNote)")
-            } else {
-                Text("")
-            }
+                return "Frees ~\(formatGB(model.approxSizeGB)) of disk. The model stays in this list and can be re-downloaded later.\(activeNote)"
+            },
+            confirmLabel: "Delete files",
+            isDestructive: true
+        ) { model in
+            Task { await performDelete(model) }
         }
     }
 

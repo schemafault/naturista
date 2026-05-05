@@ -225,15 +225,16 @@ struct LibraryView: View {
                                         ) {
                                             activeTag = (activeTag == tag) ? nil : tag
                                         }
-                                        .contextMenu {
-                                            Button("Rename…") {
-                                                renameDraft = tag
-                                                pendingRenameTag = tag
+                                        .modifier(TagContextMenuModifier(
+                                            tag: tag,
+                                            onRename: { t in
+                                                renameDraft = t
+                                                pendingRenameTag = t
+                                            },
+                                            onDelete: { t in
+                                                pendingTagDelete = t
                                             }
-                                            Button("Delete tag", role: .destructive) {
-                                                pendingTagDelete = tag
-                                            }
-                                        }
+                                        ))
                                     }
                                 }
                             }
@@ -284,18 +285,14 @@ struct LibraryView: View {
                 }
             )
         }
-        .confirmationDialog(
-            "Delete this tag?",
-            isPresented: Binding(
-                get: { pendingTagDelete != nil },
-                set: { if !$0 { pendingTagDelete = nil } }
-            ),
-            presenting: pendingTagDelete
+        .confirmModal(
+            item: $pendingTagDelete,
+            title: { _ in "Delete this tag?" },
+            message: { tag in "Removes \u{201C}\(tag)\u{201D} from every entry that has it. Your entries are not deleted." },
+            confirmLabel: "Delete tag",
+            isDestructive: true
         ) { tag in
-            Button("Delete tag", role: .destructive) { performTagDelete(tag) }
-            Button("Cancel", role: .cancel) { pendingTagDelete = nil }
-        } message: { tag in
-            Text("Removes \u{201C}\(tag)\u{201D} from every entry that has it. Your entries are not deleted.")
+            performTagDelete(tag)
         }
     }
 
@@ -870,6 +867,77 @@ private struct EntryContextMenuModifier: ViewModifier {
                     onTogglePin: { presented = false; onTogglePin(entry) }
                 )
             }
+    }
+}
+
+private struct TagContextMenuModifier: ViewModifier {
+    let tag: String
+    var onRename: (String) -> Void
+    var onDelete: (String) -> Void
+
+    @State private var presented = false
+    @State private var anchor: UnitPoint = .center
+    @State private var rowSize: CGSize = .zero
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { rowSize = geo.size }
+                        .onChange(of: geo.size) { _, new in rowSize = new }
+                }
+            )
+            .overlay(
+                RightClickCatcher { point in
+                    if rowSize.width > 0, rowSize.height > 0 {
+                        anchor = UnitPoint(
+                            x: max(0, min(1, point.x / rowSize.width)),
+                            y: max(0, min(1, point.y / rowSize.height))
+                        )
+                    }
+                    presented = true
+                }
+            )
+            .popover(
+                isPresented: $presented,
+                attachmentAnchor: .point(anchor),
+                arrowEdge: .top
+            ) {
+                TagContextMenuView(
+                    tag: tag,
+                    onRename: { presented = false; onRename(tag) },
+                    onDelete: { presented = false; onDelete(tag) }
+                )
+            }
+    }
+}
+
+private struct TagContextMenuView: View {
+    let tag: String
+    var onRename: () -> Void
+    var onDelete: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                Eyebrow(text: "Tag")
+                Text(tag)
+                    .font(DS.serif(15, italic: true))
+                    .foregroundColor(DS.ink)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 10)
+
+            MenuRow(title: "Rename…", action: onRename)
+            Hairline(color: DS.hairlineSoft).padding(.vertical, 4)
+            MenuRow(title: "Delete tag", destructive: true, action: onDelete)
+        }
+        .frame(width: 200)
+        .padding(.bottom, 6)
+        .background(DS.paper)
     }
 }
 

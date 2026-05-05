@@ -74,15 +74,14 @@ struct EntryDetailView: View {
                 onAppearPreload: { Task { await GemmaActor.shared.preload() } }
             )
         }
-        .confirmationDialog(
-            "Delete this plate?",
+        .confirmModal(
             isPresented: $showDeleteConfirm,
-            titleVisibility: .visible
+            title: "Delete this plate?",
+            message: "Removes the entry, original photo, working copy, illustration, and plate. This cannot be undone.",
+            confirmLabel: "Delete",
+            isDestructive: true
         ) {
-            Button("Delete", role: .destructive, action: deleteEntry)
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Removes the entry, original photo, working copy, illustration, and plate. This cannot be undone.")
+            deleteEntry()
         }
     }
 

@@ -61,18 +61,14 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(DS.paper)
-        .confirmationDialog(
-            "Delete this plate?",
-            isPresented: Binding(
-                get: { pendingDelete != nil },
-                set: { if !$0 { pendingDelete = nil } }
-            ),
-            presenting: pendingDelete
+        .confirmModal(
+            item: $pendingDelete,
+            title: { _ in "Delete this plate?" },
+            message: { _ in "Removes the entry, original photo, working copy, illustration, and plate. This cannot be undone." },
+            confirmLabel: "Delete",
+            isDestructive: true
         ) { entry in
-            Button("Delete", role: .destructive) { confirmDelete(entry) }
-            Button("Cancel", role: .cancel) { pendingDelete = nil }
-        } message: { _ in
-            Text("Removes the entry, original photo, working copy, illustration, and plate. This cannot be undone.")
+            confirmDelete(entry)
         }
     }
 

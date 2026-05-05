@@ -239,3 +239,17 @@ struct GhostButtonStyle: ButtonStyle {
     }
 }
 
+// Solid rust primary — used to confirm destructive actions in dialogs.
+struct DestructiveButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(DS.sans(12, weight: .medium))
+            .tracking(0.24)
+            .foregroundColor(DS.paper)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(configuration.isPressed ? DS.rust.opacity(0.82) : DS.rust)
+            .contentShape(Rectangle())
+    }
+}
+
