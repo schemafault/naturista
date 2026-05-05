@@ -11,7 +11,33 @@ import UniformTypeIdentifiers
 // output quality should match within seed variance.
 //
 // `ModelLease` releases this actor eagerly after each generate to keep
-// FLUX from sharing the GPU with Gemma — same policy as before.
+// FLUX from sharing the GPU with Gemma : same policy as before.
+
+// Per-call generation knobs. Defaults match the Python pipeline; the
+// detail-view "Regenerate with options" sheet lets users override per
+// generation without touching the standard pipeline path.
+struct FluxGenerationParams: Sendable, Equatable {
+    var width: Int
+    var height: Int
+    var steps: Int
+    var guidance: Float
+
+    // Match the Python pipeline (Python/flux_service.py defaults).
+    static let defaultTextToImage = FluxGenerationParams(
+        width: 1024, height: 1024, steps: 4, guidance: 1.0
+    )
+
+    // Image-to-image runs the same Klein 4B turbo path but with the
+    // user's photograph as a visual reference. The turbo distillation
+    // applies in both modes; we start at the same 4-step budget as
+    // text-to-image and bump only if results are mush. Slightly higher
+    // guidance because the reference image gives the prompt more to
+    // contend with.
+    static let defaultImageToImage = FluxGenerationParams(
+        width: 1024, height: 1024, steps: 6, guidance: 1.5
+    )
+}
+
 actor FluxActor {
     static let shared = FluxActor()
 
@@ -29,30 +55,44 @@ actor FluxActor {
         }
     }
 
-    // Match the Python pipeline (Python/flux_service.py defaults).
-    private static let height = 1024
-    private static let width = 1024
-    private static let steps = 4
-    private static let guidance: Float = 1.0
-
-    // Image-to-image runs the same Klein 4B turbo path but with the
-    // user's photograph as a visual reference. The turbo distillation
-    // applies in both modes; we start at the same 4-step budget as
-    // text-to-image and bump only if results are mush. Slightly higher
-    // guidance because the reference image gives the prompt more to
-    // contend with.
-    private static let imageToImageSteps = 6
-    private static let imageToImageGuidance: Float = 1.5
-
     private var pipeline: Flux2Pipeline?
 
     private init() {}
 
+    // Convenience matching `IllustratorPort`. Picks defaults based on
+    // whether a reference photo is supplied and writes to the canonical
+    // entry illustration path. The standard pipeline path uses this.
     func generate(
         identification: IdentificationResult,
         entryId: UUID,
         referencePhotoPath: String? = nil,
         customPrompt: String? = nil
+    ) async throws -> String {
+        let params: FluxGenerationParams = referencePhotoPath != nil
+            ? .defaultImageToImage
+            : .defaultTextToImage
+        let url = AppPaths.illustrations.appendingPathComponent(
+            "\(entryId.uuidString)_illustration.png"
+        )
+        return try await generate(
+            identification: identification,
+            referencePhotoPath: referencePhotoPath,
+            customPrompt: customPrompt,
+            params: params,
+            outputURL: url
+        )
+    }
+
+    // Full-control overload. Takes explicit generation params and an
+    // explicit output URL so callers (the variant flow) can target a
+    // non-canonical filename without overwriting the entry's saved
+    // illustration.
+    func generate(
+        identification: IdentificationResult,
+        referencePhotoPath: String?,
+        customPrompt: String?,
+        params: FluxGenerationParams,
+        outputURL: URL
     ) async throws -> String {
         // ModelLease is the production caller and shuts us down after
         // each illustration, so this defer is mostly a safety net for
@@ -73,9 +113,6 @@ actor FluxActor {
             prompt = IllustrationPrompts.render(template: template, identification: identification)
         }
 
-        let illustrationFilename = "\(entryId.uuidString)_illustration.png"
-        let outputURL = AppPaths.illustrations.appendingPathComponent(illustrationFilename)
-
         let pipeline = try await ensurePipeline()
         let seed = UInt64.random(in: 0..<UInt64(UInt32.max))
         let image: CGImage
@@ -85,19 +122,19 @@ actor FluxActor {
                 image = try await pipeline.generateImageToImage(
                     prompt: prompt,
                     images: [reference],
-                    height: Self.height,
-                    width: Self.width,
-                    steps: Self.imageToImageSteps,
-                    guidance: Self.imageToImageGuidance,
+                    height: params.height,
+                    width: params.width,
+                    steps: params.steps,
+                    guidance: params.guidance,
                     seed: seed
                 )
             } else {
                 image = try await pipeline.generateTextToImage(
                     prompt: prompt,
-                    height: Self.height,
-                    width: Self.width,
-                    steps: Self.steps,
-                    guidance: Self.guidance,
+                    height: params.height,
+                    width: params.width,
+                    steps: params.steps,
+                    guidance: params.guidance,
                     seed: seed
                 )
             }

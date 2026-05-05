@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct ImportFlowView: View {
     var onCancel: () -> Void
@@ -104,7 +105,7 @@ struct ImportFlowView: View {
                 .frame(maxWidth: 540, alignment: .leading)
                 .padding(.top, 6)
 
-            Dropzone(action: chooseFile)
+            Dropzone(action: chooseFile, onDrop: importPhoto)
                 .frame(maxHeight: 280)
                 .padding(.top, 24)
 
@@ -377,6 +378,10 @@ struct ImportFlowView: View {
         panel.canChooseFiles = true
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        importPhoto(at: url)
+    }
+
+    private func importPhoto(at url: URL) {
         importedURL = url
         importedImage = NSImage(contentsOf: url)
         identificationError = nil
@@ -572,7 +577,11 @@ private struct Stepper: View {
 
 private struct Dropzone: View {
     let action: () -> Void
+    let onDrop: (URL) -> Void
     @State private var hovered = false
+    @State private var isTargeted = false
+
+    private var highlighted: Bool { hovered || isTargeted }
 
     var body: some View {
         Button(action: action) {
@@ -599,11 +608,11 @@ private struct Dropzone: View {
             }
             .frame(maxWidth: .infinity)
             .padding(80)
-            .background(hovered ? DS.paperDeep : DS.paper)
+            .background(highlighted ? DS.paperDeep : DS.paper)
             .overlay(
                 Rectangle()
                     .strokeBorder(
-                        hovered ? DS.inkSoft : DS.hairline,
+                        highlighted ? DS.inkSoft : DS.hairline,
                         style: StrokeStyle(lineWidth: 1, dash: [4, 4])
                     )
             )
@@ -612,6 +621,23 @@ private struct Dropzone: View {
         .buttonStyle(.plain)
         .onHover { hovered = $0 }
         .aspectRatio(16.0/7.0, contentMode: .fit)
+        .onDrop(of: [.fileURL], isTargeted: $isTargeted) { providers in
+            handleDrop(providers: providers)
+        }
+    }
+
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        guard let provider = providers.first else { return false }
+        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+            let url: URL? = {
+                if let direct = item as? URL { return direct }
+                if let data = item as? Data { return URL(dataRepresentation: data, relativeTo: nil) }
+                return nil
+            }()
+            guard let url, NSImage(contentsOf: url) != nil else { return }
+            DispatchQueue.main.async { onDrop(url) }
+        }
+        return true
     }
 }
 

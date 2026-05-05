@@ -10,7 +10,6 @@ struct EntryDetailView: View {
     @State private var tab: PlateTab = .plate
     @State private var imageRefreshID = UUID()
     @State private var isRetrying = false
-    @State private var isRecomposing = false
     @State private var isCorrecting = false
     @State private var isExporting = false
     @State private var isDeleting = false
@@ -20,7 +19,6 @@ struct EntryDetailView: View {
     @State private var correctionDraftCommon = ""
     @State private var correctionDraftScientific = ""
     @State private var pipelineError: String?
-    @State private var preserveLayout = false
     @State private var exportMenuPresented = false
     @State private var isAddingTag = false
     @State private var tagDraft: String = ""
@@ -29,6 +27,7 @@ struct EntryDetailView: View {
     @State private var isEditingPrompt = false
     @State private var promptDraft: String = ""
     @State private var promptError: String?
+    @State private var showRegenerateOptions = false
 
     enum PlateTab { case plate, photo }
 
@@ -73,6 +72,11 @@ struct EntryDetailView: View {
                 onSave: submitCorrection,
                 onAppearPreload: { Task { await GemmaActor.shared.preload() } }
             )
+        }
+        .sheet(isPresented: $showRegenerateOptions) {
+            RegenerateOptionsSheet(entry: entry, onAccepted: {
+                Task { await reloadEntry() }
+            })
         }
         .confirmModal(
             isPresented: $showDeleteConfirm,
@@ -231,7 +235,7 @@ struct EntryDetailView: View {
                     }
                 }
                 .buttonStyle(QuietButtonStyle())
-                .disabled(isCorrecting || isRetrying || isRecomposing || isDeleting)
+                .disabled(isCorrecting || isRetrying || isDeleting)
             }
 
             VStack(alignment: .leading, spacing: 0) {
@@ -318,8 +322,6 @@ struct EntryDetailView: View {
             VStack(alignment: .leading, spacing: 10) {
                 Eyebrow(text: "Workspace")
 
-                preserveLayoutToggle
-
                 HStack(spacing: 10) {
                     Button(action: retryPipeline) {
                         HStack(spacing: 6) {
@@ -328,16 +330,13 @@ struct EntryDetailView: View {
                         }
                     }
                     .buttonStyle(QuietButtonStyle())
-                    .disabled(isRetrying || isRecomposing || isCorrecting || isDeleting)
+                    .disabled(isRetrying || isCorrecting || isDeleting)
 
-                    Button(action: regenerateIllustration) {
-                        HStack(spacing: 6) {
-                            if isRecomposing { ProgressView().controlSize(.small) }
-                            Text("Regenerate illustration")
-                        }
+                    Button(action: { showRegenerateOptions = true }) {
+                        Text("Regenerate illustration")
                     }
                     .buttonStyle(QuietButtonStyle())
-                    .disabled(entry.identification.result == nil || isRetrying || isRecomposing || isCorrecting || isDeleting)
+                    .disabled(entry.identification.result == nil || isRetrying || isCorrecting || isDeleting)
                 }
                 Button(role: .destructive) { showDeleteConfirm = true } label: {
                     HStack(spacing: 6) {
@@ -346,7 +345,7 @@ struct EntryDetailView: View {
                     }
                 }
                 .buttonStyle(GhostButtonStyle())
-                .disabled(isDeleting || isRetrying || isRecomposing || isCorrecting)
+                .disabled(isDeleting || isRetrying || isCorrecting)
                 if let err = pipelineError {
                     Text(err)
                         .font(DS.sans(11))
@@ -431,7 +430,7 @@ struct EntryDetailView: View {
 
     @ViewBuilder
     private var illustrationPromptSection: some View {
-        let busy = isRetrying || isRecomposing || isCorrecting || isDeleting
+        let busy = isRetrying || isCorrecting || isDeleting
         let hasOverride = (entry.customFluxPrompt?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
         let effectivePrompt = currentEffectivePrompt()
         let canEdit = entry.identification.result != nil
@@ -580,48 +579,6 @@ struct EntryDetailView: View {
                 await MainActor.run { promptError = error.localizedDescription }
             }
         }
-    }
-
-    // MARK: - Preserve-layout toggle
-
-    private var preserveLayoutToggle: some View {
-        let busy = isRetrying || isRecomposing || isCorrecting || isDeleting
-        return Button(action: {
-            guard !busy else { return }
-            preserveLayout.toggle()
-        }) {
-            HStack(alignment: .top, spacing: 10) {
-                ZStack {
-                    Rectangle()
-                        .stroke(preserveLayout ? DS.ink : DS.hairline, lineWidth: 1)
-                        .frame(width: 13, height: 13)
-                    if preserveLayout {
-                        Rectangle()
-                            .fill(DS.ink)
-                            .frame(width: 6, height: 6)
-                    }
-                }
-                .padding(.top, 3)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text("Match photograph composition")
-                            .font(DS.sans(12.5, weight: preserveLayout ? .semibold : .medium))
-                            .foregroundColor(DS.ink)
-                        MonoLabel(text: "MUCH SLOWER", size: 9, color: DS.amber)
-                    }
-                    Text("Re-runs FLUX with the original photograph as a visual reference.")
-                        .font(DS.sans(11))
-                        .foregroundColor(DS.inkSoft)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(busy)
-        .padding(.bottom, 4)
     }
 
     // MARK: - Tags section
@@ -884,33 +841,16 @@ struct EntryDetailView: View {
         }
     }
 
-    private func regenerateIllustration() {
-        guard let entryId = UUID(uuidString: entry.id) else { return }
-        isRecomposing = true
-        pipelineError = nil
-        let useReferencePhoto = preserveLayout
-        Task {
-            do {
-                try await EntryPipeline.production.regenerate(
-                    entryId: entryId,
-                    preserveLayout: useReferencePhoto
-                )
-                if let updated = try await DatabaseService.shared.fetchEntry(id: entry.id) {
-                    await MainActor.run {
-                        entry = updated
-                        imageRefreshID = UUID()
-                        isRecomposing = false
-                        onUpdated?(updated)
-                    }
-                } else {
-                    await MainActor.run { isRecomposing = false }
-                }
-            } catch {
-                await MainActor.run {
-                    pipelineError = error.localizedDescription
-                    isRecomposing = false
-                }
-            }
+    // Pull the latest entry from the database and refresh the plate
+    // image. Used by the variant accept callback : the pipeline
+    // already saved the swapped illustration, we just need the view
+    // model to catch up.
+    private func reloadEntry() async {
+        guard let updated = try? await DatabaseService.shared.fetchEntry(id: entry.id) else { return }
+        await MainActor.run {
+            entry = updated
+            imageRefreshID = UUID()
+            onUpdated?(updated)
         }
     }
 
@@ -918,12 +858,11 @@ struct EntryDetailView: View {
         guard let entryId = UUID(uuidString: entry.id) else { return }
         isRetrying = true
         pipelineError = nil
-        let useReferencePhoto = preserveLayout
         Task {
             do {
                 try await EntryPipeline.production.illustrate(
                     entryId: entryId,
-                    preserveLayout: useReferencePhoto
+                    preserveLayout: false
                 )
             } catch {
                 await MainActor.run { pipelineError = error.localizedDescription }

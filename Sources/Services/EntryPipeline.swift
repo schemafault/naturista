@@ -357,6 +357,83 @@ actor EntryPipeline {
         )
     }
 
+    // Variant generation: writes a new illustration to a side-by-side
+    // path WITHOUT touching the entry's saved illustration. Returned
+    // path is the variant file the UI should show alongside the
+    // canonical image. The caller must follow up with either
+    // `acceptVariant` (swap onto canonical) or `discardVariant`
+    // (delete the file).
+    //
+    // Throws if the entry has no identification yet : the variant
+    // modal is gated behind that in the UI.
+    func generateVariant(
+        entryId: UUID,
+        params: FluxGenerationParams,
+        preserveLayout: Bool
+    ) async throws -> String {
+        guard let entry = try await deps.db.fetchEntry(id: entryId.uuidString) else {
+            throw EntryPipelineError.entryNotFound
+        }
+        guard let identification = entry.identification.result else {
+            throw EntryPipelineError.missingIdentification
+        }
+
+        let referencePhotoPath = preserveLayout
+            ? Storage.current.workingURL(for: entry).path
+            : nil
+        let variantURL = AppPaths.illustrations.appendingPathComponent(
+            "\(entryId.uuidString)_variant.png"
+        )
+
+        do {
+            return try await deps.lease.withIllustrate {
+                try await FluxActor.shared.generate(
+                    identification: identification,
+                    referencePhotoPath: referencePhotoPath,
+                    customPrompt: entry.customFluxPrompt,
+                    params: params,
+                    outputURL: variantURL
+                )
+            }
+        } catch {
+            throw EntryPipelineError.illustrateFailed(error.localizedDescription)
+        }
+    }
+
+    // Promote a variant to the entry's canonical illustration. Moves
+    // the variant file onto the canonical filename (overwriting the
+    // prior illustration), refreshes the thumbnail, evicts the cache,
+    // and saves the entry. Mirrors the success-path side effects of
+    // `runIllustration` so the gallery reflects the new image
+    // immediately.
+    func acceptVariant(entryId: UUID, variantPath: String) async throws {
+        guard var entry = try await deps.db.fetchEntry(id: entryId.uuidString) else {
+            throw EntryPipelineError.entryNotFound
+        }
+        let canonicalURL = AppPaths.illustrations.appendingPathComponent(
+            "\(entryId.uuidString)_illustration.png"
+        )
+        let variantURL = URL(fileURLWithPath: variantPath)
+        let fm = FileManager.default
+        if fm.fileExists(atPath: canonicalURL.path) {
+            try fm.removeItem(at: canonicalURL)
+        }
+        try fm.moveItem(at: variantURL, to: canonicalURL)
+        deps.cache.evict(canonicalURL)
+
+        entry.illustrationFilename = canonicalURL.lastPathComponent
+        await refreshThumbnail(for: &entry, illustrationPath: canonicalURL.path)
+        entry.userStatus = "unreviewed"
+        try await deps.db.saveEntry(entry)
+    }
+
+    // Best-effort: clean up a variant the user discarded. Silent on
+    // failure : a stale variant file is harmless beyond a few MB of
+    // disk that the next variant will overwrite anyway.
+    func discardVariant(variantPath: String) {
+        try? FileManager.default.removeItem(atPath: variantPath)
+    }
+
     // Removes every artifact the entry owns (original, working,
     // thumbnail, illustration, plate), evicts the image cache for each,
     // then deletes the database row.

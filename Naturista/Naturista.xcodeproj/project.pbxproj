@@ -35,6 +35,7 @@
 		B439A45D786ED5060B07AB75 /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = A69F00722D6A8B18806E1C5C /* Tokenizers */; };
 		BDDF8C4AEFDF4CDACF6B8A77 /* ModelConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92F91446092340D77A9CE8D8 /* ModelConfig.swift */; };
 		BE1B495B9B8A25D2C0654CEF /* PlateFrameView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 067BC6A8DBB3821BAE3E87A4 /* PlateFrameView.swift */; };
+		C915A82D0873346DB085B242 /* RegenerateOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18FAD114BF896FB304190E1A /* RegenerateOptionsSheet.swift */; };
 		C9FD555F0360836E15F7EDBE /* Identifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E36A30CE3C22D25611D043F /* Identifier.swift */; };
 		CB00DFCEB33FB67D53438D72 /* FluxTextEncoders in Frameworks */ = {isa = PBXBuildFile; productRef = FCD712FF2330F8C8B31C1AD0 /* FluxTextEncoders */; };
 		CBB45685394D073D3C045634 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = C246D12C9FA5205C0F23D23E /* MLXVLM */; };
@@ -52,6 +53,7 @@
 		0685593D984F4A6A26FCC778 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		0A94A9A7CD380F41F7FED097 /* ImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageCache.swift; sourceTree = "<group>"; };
 		11AFF4097CF8FA255A915845 /* Entry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Entry.swift; sourceTree = "<group>"; };
+		18FAD114BF896FB304190E1A /* RegenerateOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegenerateOptionsSheet.swift; sourceTree = "<group>"; };
 		21D0FCAD537F5E6560D338A7 /* IllustrationPrompts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IllustrationPrompts.swift; sourceTree = "<group>"; };
 		325628BEE263E4D9F645EC4E /* ImportFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportFlowView.swift; sourceTree = "<group>"; };
 		3E7E03636E3189067354BDF7 /* SystemCapability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemCapability.swift; sourceTree = "<group>"; };
@@ -132,6 +134,7 @@
 				325628BEE263E4D9F645EC4E /* ImportFlowView.swift */,
 				FF1161E205FD047A0C8554A2 /* LibraryView.swift */,
 				067BC6A8DBB3821BAE3E87A4 /* PlateFrameView.swift */,
+				18FAD114BF896FB304190E1A /* RegenerateOptionsSheet.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -319,6 +322,7 @@
 				5E1D91126316E1D1C7F0F92B /* ModelLease.swift in Sources */,
 				6C61578CB133CF9A594F6B2C /* PlateCompositor.swift in Sources */,
 				BE1B495B9B8A25D2C0654CEF /* PlateFrameView.swift in Sources */,
+				C915A82D0873346DB085B242 /* RegenerateOptionsSheet.swift in Sources */,
 				E647A5090623B72D94CA819B /* Storage.swift in Sources */,
 				75016E2CD1160953B2AFA764 /* SystemCapability.swift in Sources */,
 				AE2B1406DF1495A32DBC7A83 /* ThumbnailBackfillService.swift in Sources */,

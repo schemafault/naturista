@@ -204,7 +204,10 @@ struct LibraryView: View {
                                             isActive: activeFamily == fam,
                                             italic: true
                                         ) {
-                                            activeFamily = (activeFamily == fam) ? nil : fam
+                                            let toggleOff = (activeFamily == fam)
+                                            activeFamily = toggleOff ? nil : fam
+                                            activeTag = nil
+                                            activeFilter = .all
                                         }
                                     }
                                 }
@@ -223,7 +226,10 @@ struct LibraryView: View {
                                             count: count,
                                             isActive: activeTag == tag
                                         ) {
-                                            activeTag = (activeTag == tag) ? nil : tag
+                                            let toggleOff = (activeTag == tag)
+                                            activeTag = toggleOff ? nil : tag
+                                            activeFamily = nil
+                                            activeFilter = .all
                                         }
                                         .modifier(TagContextMenuModifier(
                                             tag: tag,
@@ -514,15 +520,39 @@ struct LibraryView: View {
     private var emptyResults: some View {
         VStack(spacing: 6) {
             Spacer(minLength: 80)
-            Text("No matches for \u{201C}\(query)\u{201D}")
+            Text(emptyResultsTitle)
                 .font(DS.serif(22))
                 .foregroundColor(DS.ink)
-            Text("Try a common name or Latin binomial.")
+            Text(emptyResultsHint)
                 .font(DS.sans(13))
                 .foregroundColor(DS.inkSoft)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var emptyResultsTitle: String {
+        if !query.isEmpty {
+            return "No matches for \u{201C}\(query)\u{201D}"
+        }
+        if let tag = activeTag {
+            return "No entries tagged \u{201C}\(tag)\u{201D}"
+        }
+        if let fam = activeFamily {
+            return "No entries in \(fam)"
+        }
+        switch activeFilter {
+        case .pinned: return "No pinned entries"
+        case .recent: return "No recent entries"
+        case .all:    return "No entries"
+        }
+    }
+
+    private var emptyResultsHint: String {
+        if !query.isEmpty {
+            return "Try a common name or Latin binomial."
+        }
+        return "Try a different filter or clear the current selection."
     }
 
     // MARK: - Loading
