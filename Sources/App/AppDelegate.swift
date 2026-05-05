@@ -2,9 +2,19 @@ import AppKit
 import SwiftUI
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    static weak var shared: AppDelegate?
+
     var window: NSWindow?
+    private(set) var onboardingState: OnboardingState?
+
+    // Tracks the cmd-Q confirmation flow. While true, the next call to
+    // applicationShouldTerminate has already been answered via the modal
+    // and should pass through.
+    private var quitConfirmed = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Self.shared = self
+
         // Resolves Application Support, ensures every subdirectory,
         // runs the legacy ~/.cache → AppSupport model migration and
         // the pre-sandbox-flip container clone in the required order,
@@ -23,6 +33,57 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // Build the onboarding state machine and decide whether to mount
+        // OnboardingView or jump straight to ContentView. State-based
+        // detection : missing model files trigger onboarding even on
+        // returning launches (self-healing).
+        let state = OnboardingState()
+        state.phase = OnboardingDetector.needsOnboarding() ? .idle : .ready
+        self.onboardingState = state
+
+        // Defer the existing GemmaPreload startup task until we know we
+        // are not in onboarding. Onboarding does its own preload during
+        // the warmup phase, so running this here would race or duplicate.
+        if state.phase == .ready {
+            runDeferredLaunchTasks()
+        }
+
+        let styleMask: NSWindow.StyleMask = state.phase == .ready
+            ? [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+            : [.titled, .closable, .miniaturizable, .fullSizeContentView]
+
+        window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
+            styleMask: styleMask,
+            backing: .buffered,
+            defer: false
+        )
+
+        window?.title = "Naturista: My Journal"
+        window?.minSize = NSSize(width: 960, height: 640)
+        window?.titlebarAppearsTransparent = true
+        window?.titleVisibility = .visible
+        window?.appearance = NSAppearance(named: .aqua)
+        window?.backgroundColor = NSColor(srgbRed: 245/255, green: 240/255, blue: 229/255, alpha: 1)
+        window?.contentView = NSHostingView(rootView: RootView(state: state))
+        window?.center()
+        window?.makeKeyAndOrderFront(nil)
+
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    // Called from RootView when the onboarding phase flips to .ready,
+    // restoring the window's resize handle and re-enabling normal
+    // window-min-size behavior.
+    func unlockWindowResize() {
+        guard let window else { return }
+        window.styleMask.insert(.resizable)
+    }
+
+    // The pieces of applicationDidFinishLaunching that should only fire
+    // when the user is actually using the app (not during onboarding).
+    // Public so RootView can call it on the .ready transition.
+    func runDeferredLaunchTasks() {
         // Warm Gemma in the background so the first identify after launch
         // skips VLMModelFactory's container build. Off by default because it
         // holds the full model resident at idle (multiple GB). Opt-in via
@@ -36,27 +97,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
-
-        let contentView = ContentView()
-
-        window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
-        )
-
-        window?.title = "Naturista: My Journal"
-        window?.minSize = NSSize(width: 960, height: 640)
-        window?.titlebarAppearsTransparent = true
-        window?.titleVisibility = .visible
-        window?.appearance = NSAppearance(named: .aqua)
-        window?.backgroundColor = NSColor(srgbRed: 245/255, green: 240/255, blue: 229/255, alpha: 1)
-        window?.contentView = NSHostingView(rootView: contentView)
-        window?.center()
-        window?.makeKeyAndOrderFront(nil)
-
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -64,6 +104,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return true
+    }
+
+    // Intercept cmd-Q during an active onboarding download so the user
+    // confirms before we tear the app down. The OnboardingView listens
+    // for the show-modal notification and translates the user's choice
+    // back into NSApp.reply(toApplicationShouldTerminate:).
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if quitConfirmed { return .terminateNow }
+        guard let state = onboardingState, state.hasActiveDownload else {
+            return .terminateNow
+        }
+        quitConfirmed = true
+        NotificationCenter.default.post(name: .onboardingShouldShowQuitConfirm, object: nil)
+        return .terminateLater
     }
 
     // Without a main menu, the standard Cmd+C/V/X/A/Z shortcuts have no

@@ -45,6 +45,15 @@
 		FA7C9E798ABC95F3B4958D40 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41946F89622E52C94B9BEE70 /* main.swift */; };
 		FBCF5ED4091050829FFB2828 /* ImageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F44BA4A03F99571A3022B990 /* ImageService.swift */; };
 		FE9FB3E2FBE5BE151C448F17 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = BB81941C8A72B12EE2B33A8F /* GRDB */; };
+		A0E2A4C3259D2A3E8E25CD83 /* GemmaVariantList.swift in Sources */ = {isa = PBXBuildFile; fileRef = F785383863A56988A4FAF1C1 /* GemmaVariantList.swift */; };
+		70F198CCDE24CCCEDD39A30D /* OnboardingState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D480CE8BBCD6DF151EF5C58 /* OnboardingState.swift */; };
+		56B6FFCE4E03BA985555E907 /* OnboardingDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 125CB9E2F2F192DF013CFEBB /* OnboardingDetector.swift */; };
+		C76A6450D6F24F0BA093F09C /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93B0308E935A8F916E18794E /* RootView.swift */; };
+		BE5C90AFB473823A12A3D0D4 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F625EA8027C30377D624716 /* OnboardingView.swift */; };
+		F985BC581C40001EBA4348C5 /* OnboardingHero.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E055D9C2EAE3FB822B9B968 /* OnboardingHero.swift */; };
+		2B5B1F61F7D221CAFB06F1DE /* ThroughputSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85A021634B6607979E043718 /* ThroughputSampler.swift */; };
+		22F0BA5C0FD1637FB3FA2143 /* NetworkMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC6F892B29E428C041D89939 /* NetworkMonitor.swift */; };
+		6C252F01E79753ACB4C9EA90 /* onboarding_hero.png in Resources */ = {isa = PBXBuildFile; fileRef = E2424CC95D695AAB95927D25 /* onboarding_hero.png */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -82,6 +91,15 @@
 		F119C60815B030A3E465D4DE /* ThumbnailBackfillService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailBackfillService.swift; sourceTree = "<group>"; };
 		F44BA4A03F99571A3022B990 /* ImageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageService.swift; sourceTree = "<group>"; };
 		FF1161E205FD047A0C8554A2 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
+		F785383863A56988A4FAF1C1 /* GemmaVariantList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GemmaVariantList.swift; sourceTree = "<group>"; };
+		8D480CE8BBCD6DF151EF5C58 /* OnboardingState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingState.swift; sourceTree = "<group>"; };
+		125CB9E2F2F192DF013CFEBB /* OnboardingDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingDetector.swift; sourceTree = "<group>"; };
+		93B0308E935A8F916E18794E /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		4F625EA8027C30377D624716 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		7E055D9C2EAE3FB822B9B968 /* OnboardingHero.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingHero.swift; sourceTree = "<group>"; };
+		85A021634B6607979E043718 /* ThroughputSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThroughputSampler.swift; sourceTree = "<group>"; };
+		BC6F892B29E428C041D89939 /* NetworkMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkMonitor.swift; sourceTree = "<group>"; };
+		E2424CC95D695AAB95927D25 /* onboarding_hero.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = onboarding_hero.png; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -135,6 +153,7 @@
 				FF1161E205FD047A0C8554A2 /* LibraryView.swift */,
 				067BC6A8DBB3821BAE3E87A4 /* PlateFrameView.swift */,
 				18FAD114BF896FB304190E1A /* RegenerateOptionsSheet.swift */,
+				F785383863A56988A4FAF1C1 /* GemmaVariantList.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -196,9 +215,10 @@
 			children = (
 				99387AC62F9BCC7D67D67C7B /* Info.plist */,
 				5F3849A5EFBD81B6DE796D26 /* Naturista.entitlements */,
+				E2424CC95D695AAB95927D25 /* onboarding_hero.png */,
 			);
 			name = Resources;
-			path = ../Resources;
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		F16D10C4144F70217D97B1C3 /* Sources */ = {
@@ -208,11 +228,26 @@
 				6346BD18ABD3E1C02A81984E /* App */,
 				65D0EF2E44A66FCB3F32C2EB /* Compositor */,
 				9911F9FADA8A413960B7E0A6 /* Models */,
+				C7C69679D20E74766B266F67 /* Onboarding */,
 				906EFF51F2EACB334A1335B5 /* Services */,
 				786FB50FF5AA53FF1F5439F6 /* Views */,
 			);
 			name = Sources;
 			path = ../Sources;
+			sourceTree = "<group>";
+		};
+		C7C69679D20E74766B266F67 /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				8D480CE8BBCD6DF151EF5C58 /* OnboardingState.swift */,
+				125CB9E2F2F192DF013CFEBB /* OnboardingDetector.swift */,
+				93B0308E935A8F916E18794E /* RootView.swift */,
+				4F625EA8027C30377D624716 /* OnboardingView.swift */,
+				7E055D9C2EAE3FB822B9B968 /* OnboardingHero.swift */,
+				85A021634B6607979E043718 /* ThroughputSampler.swift */,
+				BC6F892B29E428C041D89939 /* NetworkMonitor.swift */,
+			);
+			path = Onboarding;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -286,6 +321,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				EF6489D7ACF2BBEBBA3DE649 /* Info.plist in Resources */,
+				6C252F01E79753ACB4C9EA90 /* onboarding_hero.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -327,6 +363,14 @@
 				75016E2CD1160953B2AFA764 /* SystemCapability.swift in Sources */,
 				AE2B1406DF1495A32DBC7A83 /* ThumbnailBackfillService.swift in Sources */,
 				FA7C9E798ABC95F3B4958D40 /* main.swift in Sources */,
+				A0E2A4C3259D2A3E8E25CD83 /* GemmaVariantList.swift in Sources */,
+				70F198CCDE24CCCEDD39A30D /* OnboardingState.swift in Sources */,
+				56B6FFCE4E03BA985555E907 /* OnboardingDetector.swift in Sources */,
+				C76A6450D6F24F0BA093F09C /* RootView.swift in Sources */,
+				BE5C90AFB473823A12A3D0D4 /* OnboardingView.swift in Sources */,
+				F985BC581C40001EBA4348C5 /* OnboardingHero.swift in Sources */,
+				2B5B1F61F7D221CAFB06F1DE /* ThroughputSampler.swift in Sources */,
+				22F0BA5C0FD1637FB3FA2143 /* NetworkMonitor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -154,6 +154,36 @@ actor FluxActor {
         MLX.Memory.clearCache()
     }
 
+    // Used by onboarding's "downloading" phase. Spins up a throwaway
+    // Pipeline (cheap : just stores config) and asks it to fetch any
+    // missing transformer + VAE weights. Idempotent : already-present
+    // files are skipped via Flux2ModelDownloader.isDownloaded checks.
+    // Note: text encoder weights are handled by MistralCore / Flux text
+    // encoders and are downloaded lazily on first generate, not here.
+    func downloadWeights(progress: Flux2DownloadProgressCallback?) async throws {
+        let temporary = Flux2Pipeline(
+            model: .klein4B,
+            quantization: Self.quantization(
+                for: SystemCapability.current,
+                preference: FluxQuantizationStore.shared.selected
+            )
+        )
+        try await temporary.loadModels(progressCallback: progress)
+    }
+
+    // Cheap, synchronous check used by OnboardingDetector to decide
+    // whether onboarding needs to run. Mirrors Flux2Pipeline's own
+    // hasRequiredModels but without an actor hop : pipelines are cheap
+    // to construct and the check just hits the filesystem.
+    nonisolated static func areWeightsInstalled() -> Bool {
+        let q = Self.quantization(
+            for: SystemCapability.current,
+            preference: FluxQuantizationStore.shared.selected
+        )
+        let probe = Flux2Pipeline(model: .klein4B, quantization: q)
+        return probe.hasRequiredModels
+    }
+
     private func ensurePipeline() async throws -> Flux2Pipeline {
         if let pipeline { return pipeline }
         let next = Flux2Pipeline(

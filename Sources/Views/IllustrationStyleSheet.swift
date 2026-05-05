@@ -201,14 +201,9 @@ struct IllustrationStyleSheet: View {
                 .foregroundColor(DS.inkSoft)
                 .lineLimit(2)
 
-            VStack(spacing: 0) {
-                ForEach(GemmaModel.allCases) { option in
-                    modelRow(option)
-                    if option != GemmaModel.allCases.last { Hairline() }
-                }
+            GemmaVariantList(selection: $selectedModel) { option in
+                modelRowTrailing(option, installed: option.isInstalled, compat: option.compatibility())
             }
-            .background(DS.paperDeep)
-            .overlay(Rectangle().stroke(DS.hairline, lineWidth: 1))
 
             if let modelError {
                 Text(modelError)

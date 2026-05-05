@@ -96,6 +96,26 @@ enum GemmaModel: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    // Auto-pick the best Gemma for a given Mac. Used by onboarding to
+    // suggest a download. Iterates from largest to smallest, returning the
+    // first variant whose compatibility is fully .compatible (not .marginal).
+    // Below 36 GB we skip the 31B dense model in favor of the smaller QAT
+    // SKUs : 31B is technically compatible at 24+, but QAT runs sharper-
+    // per-GB at that memory footprint. If nothing is fully compatible we
+    // fall back to the smallest selectable variant so the user always sees
+    // something they can install.
+    static func recommended(for capability: SystemCapability = .current) -> GemmaModel {
+        let order: [GemmaModel] = [.gemma4_31b, .gemma3_27b_qat, .gemma3_12b, .gemma3_4b, .gemma4_e4b]
+        for m in order where m.compatibility(on: capability) == .compatible {
+            if m == .gemma4_31b && capability.physicalMemoryGB < 36 { continue }
+            return m
+        }
+        for m in order.reversed() where m.compatibility(on: capability).isSelectable {
+            return m
+        }
+        return .gemma4_e4b
+    }
+
     func compatibility(on capability: SystemCapability = .current) -> ModelCompatibility {
         if !capability.isAppleSilicon {
             return .incompatible(reason: "Requires Apple Silicon. This Mac reports \(capability.chipModel).")
