@@ -32,8 +32,12 @@ struct EntryDetailView: View {
     @State private var promptDraft: String = ""
     @State private var promptError: String?
     @State private var showRegenerateOptions = false
+    @State private var editingField: EditableField? = nil
+    @State private var editDraft: String = ""
+    @FocusState private var editFocused: Bool
 
     enum PlateTab { case plate, photo }
+    enum EditableField { case commonName, scientificName, family }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -223,14 +227,8 @@ struct EntryDetailView: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Eyebrow(text: "Identification")
-                    Text(id.commonName ?? "Unidentified")
-                        .font(DS.serif(26, weight: .regular))
-                        .foregroundColor(DS.ink)
-                    if let scientific = id.scientificName, !scientific.isEmpty {
-                        Text(scientific)
-                            .font(DS.serif(15, italic: true))
-                            .foregroundColor(DS.inkSoft)
-                    }
+                    editableCommonName
+                    editableScientificName
                 }
                 Spacer(minLength: 0)
                 Button(action: startCorrection) {
@@ -248,10 +246,7 @@ struct EntryDetailView: View {
             VStack(alignment: .leading, spacing: 0) {
                 Hairline(color: DS.hairline)
                 detailRow(label: "Family") {
-                    let family = id.family ?? ""
-                    Text(family.isEmpty ? "—" : family)
-                        .font(DS.serif(13, italic: true))
-                        .foregroundColor(DS.ink)
+                    editableFamily
                 }
                 detailRow(label: "Captured") {
                     Text(displayCaptureDate)
@@ -384,6 +379,148 @@ struct EntryDetailView: View {
         .padding(.vertical, 10)
         .overlay(alignment: .bottom) {
             Rectangle().fill(DS.hairlineSoft).frame(height: 1)
+        }
+    }
+
+    // MARK: - Inline-editable fields
+
+    @ViewBuilder
+    private var editableCommonName: some View {
+        if editingField == .commonName {
+            TextField("", text: $editDraft)
+                .textFieldStyle(.plain)
+                .font(DS.serif(26, weight: .regular))
+                .foregroundColor(DS.ink)
+                .focused($editFocused)
+                .onSubmit { commitEdit(.commonName) }
+                .onExitCommand { cancelEdit() }
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(entry.effectiveCommonName ?? "Unidentified")
+                    .font(DS.serif(26, weight: .regular))
+                    .foregroundColor(DS.ink)
+                if entry.isCommonNameEdited {
+                    editedBadge
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                startEdit(.commonName, current: entry.effectiveCommonName ?? "")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var editableScientificName: some View {
+        if editingField == .scientificName {
+            TextField("", text: $editDraft)
+                .textFieldStyle(.plain)
+                .font(DS.serif(15, italic: true))
+                .foregroundColor(DS.inkSoft)
+                .focused($editFocused)
+                .onSubmit { commitEdit(.scientificName) }
+                .onExitCommand { cancelEdit() }
+        } else if let scientific = entry.effectiveScientificName, !scientific.isEmpty {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(scientific)
+                    .font(DS.serif(15, italic: true))
+                    .foregroundColor(DS.inkSoft)
+                if entry.isScientificNameEdited {
+                    editedBadge
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                startEdit(.scientificName, current: scientific)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var editableFamily: some View {
+        if editingField == .family {
+            TextField("", text: $editDraft)
+                .textFieldStyle(.plain)
+                .font(DS.serif(13, italic: true))
+                .foregroundColor(DS.ink)
+                .focused($editFocused)
+                .onSubmit { commitEdit(.family) }
+                .onExitCommand { cancelEdit() }
+        } else {
+            let family = entry.effectiveFamily ?? ""
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(family.isEmpty ? "—" : family)
+                    .font(DS.serif(13, italic: true))
+                    .foregroundColor(DS.ink)
+                if entry.isFamilyEdited {
+                    editedBadge
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                startEdit(.family, current: family)
+            }
+        }
+    }
+
+    private var editedBadge: some View {
+        Text("edited")
+            .font(DS.sans(10))
+            .tracking(0.4)
+            .foregroundColor(DS.muted)
+    }
+
+    private func startEdit(_ field: EditableField, current: String) {
+        editDraft = current
+        editingField = field
+        // Defer focus until the TextField is actually mounted.
+        DispatchQueue.main.async { editFocused = true }
+    }
+
+    private func cancelEdit() {
+        editingField = nil
+        editDraft = ""
+        editFocused = false
+    }
+
+    private func commitEdit(_ field: EditableField) {
+        let trimmed = editDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let aiValue: String
+        switch field {
+        case .commonName: aiValue = entry.identification.commonName ?? ""
+        case .scientificName: aiValue = entry.identification.scientificName ?? ""
+        case .family: aiValue = entry.identification.family ?? ""
+        }
+        // If the user typed the AI value verbatim (or cleared the field),
+        // clear the override instead of persisting a redundant duplicate.
+        let valueForDB: String? = trimmed.isEmpty || trimmed == aiValue ? nil : trimmed
+        let id = entry.id
+        editingField = nil
+        editDraft = ""
+        editFocused = false
+        Task {
+            do {
+                let updated: Entry?
+                switch field {
+                case .commonName:
+                    updated = try await DatabaseService.shared.setEditedCommonName(id: id, value: valueForDB)
+                case .scientificName:
+                    updated = try await DatabaseService.shared.setEditedScientificName(id: id, value: valueForDB)
+                case .family:
+                    updated = try await DatabaseService.shared.setEditedFamily(id: id, value: valueForDB)
+                }
+                if let updated {
+                    await MainActor.run {
+                        entry = updated
+                        onUpdated?(updated)
+                        updateWindowTitle()
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    pipelineError = error.localizedDescription
+                }
+            }
         }
     }
 
@@ -726,6 +863,10 @@ struct EntryDetailView: View {
     // Esc: cancel the innermost edit if one is open, otherwise return
     // to the library.
     private func handleEscape() {
+        if editingField != nil {
+            cancelEdit()
+            return
+        }
         if isEditingPrompt {
             isEditingPrompt = false
             promptDraft = ""
@@ -743,7 +884,7 @@ struct EntryDetailView: View {
     // MARK: - Side effects
 
     private func updateWindowTitle() {
-        NSApp.windows.first?.title = "Naturista: \(entry.identification.commonName ?? "Entry")"
+        NSApp.windows.first?.title = "Naturista: \(entry.effectiveCommonName ?? "Entry")"
     }
 
     private func persistEntry() {
@@ -802,11 +943,13 @@ struct EntryDetailView: View {
     }
 
     private func startCorrection() {
-        // Pre-fill drafts with the current identification so the user edits
-        // rather than retypes. Empty defaults if the entry has no result yet
-        // (rare — the Edit button is hidden in that flow path, but defensive).
-        correctionDraftCommon = entry.identification.commonName ?? ""
-        correctionDraftScientific = entry.identification.scientificName ?? ""
+        // Pre-fill drafts with the current effective values so the user edits
+        // rather than retypes — and so a user who already edited the name
+        // inline sees their corrected value, not the stale AI guess. Empty
+        // defaults if the entry has no result yet (rare: the Edit button is
+        // hidden in that flow path, but defensive).
+        correctionDraftCommon = entry.effectiveCommonName ?? ""
+        correctionDraftScientific = entry.effectiveScientificName ?? ""
         showCorrectionSheet = true
     }
 
@@ -893,7 +1036,7 @@ struct EntryDetailView: View {
         let panel = NSSavePanel()
         panel.title = "Export Plate"
         panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = "\(entry.identification.commonName ?? "plate")-plate.png"
+        panel.nameFieldStringValue = "\(entry.effectiveCommonName ?? "plate")-plate.png"
         panel.canCreateDirectories = true
 
         guard panel.runModal() == .OK, let destination = panel.url else {
@@ -923,7 +1066,7 @@ struct EntryDetailView: View {
         let panel = NSSavePanel()
         panel.title = "Export Image"
         panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = "\(entry.identification.commonName ?? "plate")-image.png"
+        panel.nameFieldStringValue = "\(entry.effectiveCommonName ?? "plate")-image.png"
         panel.canCreateDirectories = true
 
         guard panel.runModal() == .OK, let destination = panel.url else {
@@ -1025,7 +1168,7 @@ private struct NotesEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Eyebrow(text: "Notes")
-            Text(entry.identification.commonName ?? "Notes")
+            Text(entry.effectiveCommonName ?? "Notes")
                 .font(DS.serif(22))
                 .foregroundColor(DS.ink)
 

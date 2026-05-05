@@ -40,8 +40,7 @@ struct PlateFrameView: View {
     }
 
     private var header: some View {
-        let id = entry.identification
-        let common = id.commonName ?? "Unidentified"
+        let common = entry.effectiveCommonName ?? "Unidentified"
         return VStack(spacing: 6) {
             MonoLabel(text: "PLATE \(plateNumber)", color: DS.muted)
                 .padding(.bottom, 8)
@@ -50,7 +49,7 @@ struct PlateFrameView: View {
                 .tracking(1.2)
                 .foregroundColor(DS.ink)
                 .multilineTextAlignment(.center)
-            if let scientific = id.scientificName, !scientific.isEmpty {
+            if let scientific = entry.effectiveScientificName, !scientific.isEmpty {
                 Text(scientific)
                     .font(DS.serif(15, italic: true))
                     .foregroundColor(DS.inkSoft)
@@ -61,7 +60,7 @@ struct PlateFrameView: View {
 
     @ViewBuilder
     private var illustrationSlot: some View {
-        let placeholderLabel = entry.identification.commonName ?? "Unidentified"
+        let placeholderLabel = entry.effectiveCommonName ?? "Unidentified"
         Group {
             if let preloaded = preloadedIllustration {
                 Image(nsImage: preloaded)
@@ -87,7 +86,7 @@ struct PlateFrameView: View {
 
     private var footer: some View {
         HStack {
-            if let family = entry.identification.family, !family.isEmpty {
+            if let family = entry.effectiveFamily, !family.isEmpty {
                 Text(family)
                     .font(DS.serif(13, italic: true))
                     .foregroundColor(DS.mutedDeep)

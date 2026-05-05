@@ -37,8 +37,7 @@ struct LibraryView: View {
 
     private var filtered: [Entry] {
         entries.filter { e in
-            let id = e.identification
-            let family = id.family ?? ""
+            let family = e.effectiveFamily ?? ""
             if let fam = activeFamily, family != fam { return false }
             if let tag = activeTag, !e.tags.contains(tag) { return false }
             switch activeFilter {
@@ -48,8 +47,8 @@ struct LibraryView: View {
             }
             if query.isEmpty { return true }
             let q = query.lowercased()
-            let common = id.commonName ?? ""
-            let scientific = id.scientificName ?? ""
+            let common = e.effectiveCommonName ?? ""
+            let scientific = e.effectiveScientificName ?? ""
             return common.lowercased().contains(q)
                 || scientific.lowercased().contains(q)
                 || family.lowercased().contains(q)
@@ -76,7 +75,7 @@ struct LibraryView: View {
     private static func computeFamilyCounts(_ entries: [Entry]) -> [(String, Int)] {
         var counts: [String: Int] = [:]
         for e in entries {
-            guard let family = e.identification.family, !family.isEmpty else { continue }
+            guard let family = e.effectiveFamily, !family.isEmpty else { continue }
             counts[family, default: 0] += 1
         }
         return counts.sorted { lhs, rhs in
@@ -396,7 +395,7 @@ struct LibraryView: View {
                     HStack(spacing: 4) {
                         Text("\(filtered.count) \(filtered.count == 1 ? "plate" : "plates")")
                         Text("·")
-                        Text("\(Set(filtered.compactMap { $0.identification.family }.filter { !$0.isEmpty }).count) families")
+                        Text("\(Set(filtered.compactMap { $0.effectiveFamily }.filter { !$0.isEmpty }).count) families")
                     }
                     .font(DS.sans(11))
                     .tracking(0.4)
@@ -567,7 +566,7 @@ struct LibraryView: View {
                     recentIds = Self.computeRecentIds(fetched)
                     familyCounts = Self.computeFamilyCounts(fetched)
                     tagCounts = Self.computeTagCounts(fetched)
-                    if let fam = activeFamily, !fetched.contains(where: { $0.identification.family == fam }) {
+                    if let fam = activeFamily, !fetched.contains(where: { $0.effectiveFamily == fam }) {
                         activeFamily = nil
                     }
                     if let tag = activeTag, !fetched.contains(where: { $0.tags.contains(tag) }) {

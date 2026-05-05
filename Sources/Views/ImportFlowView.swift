@@ -98,7 +98,7 @@ struct ImportFlowView: View {
             Text("Add a specimen")
                 .font(DS.serif(26, weight: .regular))
                 .foregroundColor(DS.ink)
-            Text("A clear, well-lit photograph of a single subject (plant, animal, or fungus) yields the strongest identification.")
+            Text("A clear, well-lit photograph of a single subject yields the strongest identification. Plants, animals, and fungi are best supported; other subjects are accepted with reduced detail.")
                 .font(DS.sans(13))
                 .lineSpacing(3)
                 .foregroundColor(DS.inkSoft)
@@ -110,7 +110,7 @@ struct ImportFlowView: View {
                 .padding(.top, 24)
 
             HStack(alignment: .top, spacing: 32) {
-                hintColumn(numeral: "I", title: "Subject fills the frame", text: "Capture the whole organism with diagnostic features visible.")
+                hintColumn(numeral: "I", title: "Subject fills the frame", text: "Capture the whole subject with diagnostic features visible.")
                 hintColumn(numeral: "II", title: "Even natural light", text: "Avoid harsh shadows and underexposure.")
                 hintColumn(numeral: "III", title: "One subject at a time", text: "A single specimen yields the cleanest plate.")
             }

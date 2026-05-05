@@ -55,6 +55,13 @@ actor DatabaseService {
                 t.add(column: "customFluxPrompt", .text)
             }
         }
+        migrator.registerMigration("v6_editedTaxonomy") { db in
+            try db.alter(table: "entries") { t in
+                t.add(column: "editedCommonName", .text)
+                t.add(column: "editedScientificName", .text)
+                t.add(column: "editedFamily", .text)
+            }
+        }
         return migrator
     }
 
@@ -145,6 +152,49 @@ actor DatabaseService {
         return try dbQueue.write { db in
             guard var entry = try Entry.fetchOne(db, key: id) else { return nil }
             entry.customFluxPrompt = normalized
+            try entry.update(db)
+            return entry
+        }
+    }
+
+    // Trim and normalise empty/whitespace-only edits to nil (clears the
+    // override and reverts the field to the AI value).
+    private static func normalizeEdit(_ value: String?) -> String? {
+        let cleaned = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (cleaned?.isEmpty ?? true) ? nil : cleaned
+    }
+
+    @discardableResult
+    func setEditedCommonName(id: String, value: String?) throws -> Entry? {
+        guard let dbQueue else { throw DatabaseError.notInitialized }
+        let normalized = Self.normalizeEdit(value)
+        return try dbQueue.write { db in
+            guard var entry = try Entry.fetchOne(db, key: id) else { return nil }
+            entry.editedCommonName = normalized
+            try entry.update(db)
+            return entry
+        }
+    }
+
+    @discardableResult
+    func setEditedScientificName(id: String, value: String?) throws -> Entry? {
+        guard let dbQueue else { throw DatabaseError.notInitialized }
+        let normalized = Self.normalizeEdit(value)
+        return try dbQueue.write { db in
+            guard var entry = try Entry.fetchOne(db, key: id) else { return nil }
+            entry.editedScientificName = normalized
+            try entry.update(db)
+            return entry
+        }
+    }
+
+    @discardableResult
+    func setEditedFamily(id: String, value: String?) throws -> Entry? {
+        guard let dbQueue else { throw DatabaseError.notInitialized }
+        let normalized = Self.normalizeEdit(value)
+        return try dbQueue.write { db in
+            guard var entry = try Entry.fetchOne(db, key: id) else { return nil }
+            entry.editedFamily = normalized
             try entry.update(db)
             return entry
         }

@@ -20,6 +20,13 @@ struct Entry: Codable, FetchableRecord, PersistableRecord, Identifiable {
     // in FluxActor. Edited via the detail view's "Illustration prompt"
     // section. Nil means "follow the rendered template" — the default.
     var customFluxPrompt: String? = nil
+    // User-edited overrides for fields originally produced by Gemma.
+    // nil means "no override, use the AI value from identificationJson".
+    // Cleared when the entry is re-identified (new AI output supersedes
+    // edits attached to the previous guess).
+    var editedCommonName: String? = nil
+    var editedScientificName: String? = nil
+    var editedFamily: String? = nil
 
     static let databaseTableName = "entries"
 
@@ -28,6 +35,7 @@ struct Entry: Codable, FetchableRecord, PersistableRecord, Identifiable {
         case identificationJson, modelConfidence, userStatus
         case illustrationFilename, plateFilename, thumbnailFilename, notes, pinned, tagsJson
         case customFluxPrompt
+        case editedCommonName, editedScientificName, editedFamily
     }
 }
 
@@ -45,6 +53,22 @@ extension Entry {
         guard let data = tagsJson.data(using: .utf8) else { return [] }
         return (try? JSONDecoder().decode([String].self, from: data)) ?? []
     }
+
+    // Effective values overlay user edits on top of the AI output. Reads
+    // through these everywhere except inside CorrectIdentificationSheet
+    // (which intentionally edits the AI value via re-inference).
+    var effectiveCommonName: String? {
+        editedCommonName ?? identification.commonName
+    }
+    var effectiveScientificName: String? {
+        editedScientificName ?? identification.scientificName
+    }
+    var effectiveFamily: String? {
+        editedFamily ?? identification.family
+    }
+    var isCommonNameEdited: Bool { editedCommonName != nil }
+    var isScientificNameEdited: Bool { editedScientificName != nil }
+    var isFamilyEdited: Bool { editedFamily != nil }
 
     // Trim whitespace, drop empties, dedupe (case-sensitive, order-preserving),
     // and re-encode. Centralised so callers can't smuggle in dirty input.

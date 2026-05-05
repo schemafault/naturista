@@ -292,6 +292,13 @@ actor EntryPipeline {
         }
 
         entry.setIdentification(.success(result))
+        // The new AI output supersedes any inline edits attached to the
+        // previous guess: a re-ID typically means the entry now represents
+        // a different identified subject, so a stale edited family from the
+        // old species would be inconsistent with the new species.
+        entry.editedCommonName = nil
+        entry.editedScientificName = nil
+        entry.editedFamily = nil
         try await deps.db.saveEntry(entry)
         return result
     }

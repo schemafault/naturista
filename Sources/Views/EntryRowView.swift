@@ -7,7 +7,7 @@ struct EntryRowView: View {
     @State private var hovered = false
 
     var body: some View {
-        let id = entry.identification
+        let kingdom = entry.identification.kingdom
         VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .topLeading) {
                 Rectangle()
@@ -28,19 +28,19 @@ struct EntryRowView: View {
                     Rectangle()
                         .fill(DS.hairline)
                         .frame(width: 1, height: 9)
-                    MonoLabel(text: id.kingdom.displayLabel, color: DS.muted)
+                    MonoLabel(text: kingdom.displayLabel, color: DS.muted)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(id.commonName ?? "Unidentified")
+                Text(entry.effectiveCommonName ?? "Unidentified")
                     .font(DS.serif(17, weight: .regular))
                     .foregroundColor(DS.ink)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
-                if let scientific = id.scientificName, !scientific.isEmpty {
+                if let scientific = entry.effectiveScientificName, !scientific.isEmpty {
                     Text(scientific)
                         .font(DS.serif(13, italic: true))
                         .foregroundColor(DS.mutedDeep)
@@ -92,7 +92,7 @@ struct EntryRowView: View {
     @ViewBuilder
     private var workingOrPlaceholder: some View {
         let workingURL = AppPaths.working.appendingPathComponent(entry.workingImageFilename)
-        let label = entry.identification.commonName ?? "Unidentified"
+        let label = entry.effectiveCommonName ?? "Unidentified"
         if FileManager.default.fileExists(atPath: workingURL.path) {
             LocalImage(url: workingURL, contentMode: .fill, fallback: { PlatePlaceholder(label: label) })
         } else {
