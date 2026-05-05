@@ -415,9 +415,9 @@ struct EntryDetailView: View {
     private var safetyFooter: Text {
         switch entry.identification.kingdom {
         case .plant:
-            return Text("Identification produced locally. Treat as a reference — verify with a field guide before consumption or handling.")
+            return Text("Identification produced locally. Treat as a reference: verify with a field guide before consumption or handling.")
         case .animal:
-            return Text("Identification produced locally. Treat as a reference — do not approach, handle, or feed wildlife based on this.")
+            return Text("Identification produced locally. Treat as a reference: do not approach, handle, or feed wildlife based on this.")
         case .fungus:
             return Text("Identification produced locally. ")
                 + Text("Never eat a wild mushroom based on this identification.").bold()
@@ -507,7 +507,7 @@ struct EntryDetailView: View {
                     }
 
                     Text(hasOverride
-                        ? "This entry uses a custom prompt. Re-identifying won't update it — use Reset to follow the template again."
+                        ? "This entry uses a custom prompt. Re-identifying won't update it: use Reset to follow the template again."
                         : "Generated from the kingdom template and Gemma's photo description. Edit to override per-entry.")
                         .font(DS.sans(11))
                         .foregroundColor(DS.muted)
@@ -779,7 +779,7 @@ struct EntryDetailView: View {
     // MARK: - Side effects
 
     private func updateWindowTitle() {
-        NSApp.windows.first?.title = "Naturista — \(entry.identification.commonName ?? "Entry")"
+        NSApp.windows.first?.title = "Naturista: \(entry.identification.commonName ?? "Entry")"
     }
 
     private func persistEntry() {

@@ -177,7 +177,7 @@ enum FluxQuantizationPreference: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .auto:         return "Picks Minimal on Macs with 48 GB+ RAM, Ultra minimal otherwise."
         case .ultraMinimal: return "int4 transformer. Lowest memory, slight color drift vs. Minimal."
-        case .minimal:      return "qint8 transformer. Fidelity target — matches the original mflux pipeline."
+        case .minimal:      return "qint8 transformer. Fidelity target: matches the original mflux pipeline."
         case .balanced:     return "8-bit text encoder + qint8 transformer. Sharper text/edge details on big Macs."
         }
     }

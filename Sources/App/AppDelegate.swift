@@ -46,7 +46,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             defer: false
         )
 
-        window?.title = "Naturista — My Journal"
+        window?.title = "Naturista: My Journal"
         window?.minSize = NSSize(width: 960, height: 640)
         window?.titlebarAppearsTransparent = true
         window?.titleVisibility = .visible

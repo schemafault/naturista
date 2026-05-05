@@ -56,7 +56,7 @@ struct ImportFlowView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(DS.paper)
-        .onAppear { NSApp.windows.first?.title = "Naturista — New Entry" }
+        .onAppear { NSApp.windows.first?.title = "Naturista: New Entry" }
         .sheet(isPresented: $showCorrectionSheet) {
             CorrectIdentificationSheet(
                 commonName: $correctionDraftCommon,
@@ -97,7 +97,7 @@ struct ImportFlowView: View {
             Text("Add a specimen")
                 .font(DS.serif(26, weight: .regular))
                 .foregroundColor(DS.ink)
-            Text("A clear, well-lit photograph of a single subject — plant, animal, or fungus — yields the strongest identification.")
+            Text("A clear, well-lit photograph of a single subject (plant, animal, or fungus) yields the strongest identification.")
                 .font(DS.sans(13))
                 .lineSpacing(3)
                 .foregroundColor(DS.inkSoft)
@@ -350,7 +350,7 @@ struct ImportFlowView: View {
                 .font(DS.serif(26))
                 .foregroundColor(DS.ink)
             Text(preserveLayout
-                 ? "Drawing the illustration with your photograph as a visual reference. This takes longer than the default — please leave the window open."
+                 ? "Drawing the illustration with your photograph as a visual reference. This takes longer than the default: please leave the window open."
                  : "The illustration is being drawn and arranged within the plate frame.")
                 .font(DS.sans(13))
                 .foregroundColor(DS.inkSoft)

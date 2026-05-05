@@ -602,7 +602,7 @@ struct LibraryView: View {
     }
 
     private func updateWindowTitle() {
-        let title = "Naturista — My Journal"
+        let title = "Naturista: My Journal"
         NSApp.windows.first?.title = title
     }
 }

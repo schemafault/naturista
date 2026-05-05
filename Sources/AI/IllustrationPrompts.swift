@@ -22,33 +22,33 @@ enum IllustrationPrompts {
         .plant: """
             A hand-coloured botanical illustration of {scientific_name}, {common_name}, \
             shown {pose}, with {colors}. \
-            In the style of Ferdinand Bauer and Pierre-Joseph Redouté — 19th century natural history plates \
+            In the style of Ferdinand Bauer and Pierre-Joseph Redouté: 19th century natural history plates \
             with delicate watercolour washes, fine ink linework, and accurate botanical detail. \
             {subject}. \
-            The specimen sits alone on the paper. The paper is entirely blank — no environment, no scenery, no foliage, no shadow beyond the specimen itself, unmarked margins. Cream paper, smooth uninterrupted surface.
+            The specimen sits alone on the paper. The paper is entirely blank: no environment, no scenery, no foliage, no shadow beyond the specimen itself, unmarked margins. Cream paper, smooth uninterrupted surface.
             """,
         .animal: """
             A hand-coloured zoological plate of {scientific_name}, {common_name}, \
             shown {pose}, with {colors}. \
-            In the style of Joseph Wolf and the Zoological Society of London's animal monographs — \
+            In the style of Joseph Wolf and the Zoological Society of London's animal monographs: \
             19th century natural history with rich watercolour pigments, careful anatomical detail, \
             and a poised lifelike pose. Full colour, never grayscale or sepia. \
             {subject}. \
-            The {common_name} sits alone on the paper. The paper is entirely blank — no environment, no scenery, no foliage, no shadow beyond the specimen itself, unmarked margins. Cream paper, smooth uninterrupted surface.
+            The {common_name} sits alone on the paper. The paper is entirely blank: no environment, no scenery, no foliage, no shadow beyond the specimen itself, unmarked margins. Cream paper, smooth uninterrupted surface.
             """,
         .fungus: """
             A hand-coloured mycological plate of {scientific_name}, {common_name}, \
             shown {pose}, with {colors}. \
-            In the style of Anna Maria Hussey and the Victorian fungal monographs — \
+            In the style of Anna Maria Hussey and the Victorian fungal monographs: \
             soft watercolour with careful attention to gill colour and cap texture, \
             showing the whole specimen alongside a cross-section view. \
             {subject}. \
-            The specimen sits alone on the paper. The paper is entirely blank — no environment, no scenery, no foliage, no shadow beyond the specimen itself, unmarked margins. Cream paper, smooth uninterrupted surface.
+            The specimen sits alone on the paper. The paper is entirely blank: no environment, no scenery, no foliage, no shadow beyond the specimen itself, unmarked margins. Cream paper, smooth uninterrupted surface.
             """,
         .other: """
             A hand-painted Dutch Golden Age still-life study of {common_name}, \
             arranged {pose}, with {colors}. \
-            In the style of Pieter Claesz and Willem Kalf — chiaroscuro oil painting \
+            In the style of Pieter Claesz and Willem Kalf: chiaroscuro oil painting \
             with warm side lighting, deep shadows, and rich saturated colour. \
             {subject}. \
             Against a smooth dark muted backdrop, unmarked surface.
