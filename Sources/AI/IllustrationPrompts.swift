@@ -30,11 +30,11 @@ enum IllustrationPrompts {
         .animal: """
             A hand-coloured zoological plate of {scientific_name}, {common_name}, \
             shown {pose}, with {colors}. \
-            In the style of John James Audubon's Birds of America and John Gould's monographs — \
+            In the style of Joseph Wolf and the Zoological Society of London's animal monographs — \
             19th century natural history with rich watercolour pigments, careful anatomical detail, \
             and a poised lifelike pose. Full colour, never grayscale or sepia. \
             {subject}. \
-            The specimen sits alone on the paper. The paper is entirely blank — no environment, no scenery, no foliage, no shadow beyond the specimen itself, unmarked margins. Cream paper, smooth uninterrupted surface.
+            The {common_name} sits alone on the paper. The paper is entirely blank — no environment, no scenery, no foliage, no shadow beyond the specimen itself, unmarked margins. Cream paper, smooth uninterrupted surface.
             """,
         .fungus: """
             A hand-coloured mycological plate of {scientific_name}, {common_name}, \

@@ -110,12 +110,38 @@ struct LibraryView: View {
                 .background(DS.paper)
         }
         .background(DS.paper)
+        .background(pageNavigationShortcuts)
         .onAppear { reload() }
         .onChange(of: reloadToken) { _, _ in reload() }
         .onChange(of: query) { _, _ in page = 0 }
         .onChange(of: activeFamily) { _, _ in page = 0 }
         .onChange(of: activeTag) { _, _ in page = 0 }
         .onChange(of: activeFilter) { _, _ in page = 0 }
+    }
+
+    // Hidden buttons whose only purpose is to register left/right arrow
+    // shortcuts for paging. Sandbox-safe: shortcuts are window-scoped
+    // (no global hotkey), satisfying Mac App Store review requirements.
+    // Buttons sit in the view hierarchy via `.background(...)` so the
+    // shortcuts are active without taking visible space, and they're
+    // disabled at the bounds so the keystroke is a clean no-op.
+    private var pageNavigationShortcuts: some View {
+        Group {
+            Button("Previous page") {
+                if page > 0 { page -= 1 }
+            }
+            .keyboardShortcut(.leftArrow, modifiers: [])
+            .disabled(page == 0)
+
+            Button("Next page") {
+                if page < totalPages - 1 { page += 1 }
+            }
+            .keyboardShortcut(.rightArrow, modifiers: [])
+            .disabled(page >= totalPages - 1)
+        }
+        .opacity(0)
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
     }
 
     // MARK: - Sidebar
@@ -414,27 +440,49 @@ struct LibraryView: View {
             // clamping the scroll content height.
             GeometryReader { geo in
                 let cols = columnCount(for: geo.size.width)
-                ScrollView {
-                    VStack(spacing: 28) {
-                        MasonryGrid(
-                            entries: visibleEntries,
-                            columnCount: cols,
-                            spacing: 28,
-                            onOpen: onOpen,
-                            onRegenerate: { entry in onRequestRegenerate?(entry) },
-                            onDelete: { entry in onRequestDelete?(entry) },
-                            onTogglePin: { entry in togglePin(entry) }
-                        )
-                        if totalPages > 1 {
-                            PaginationBar(page: page, total: totalPages) { page = $0 }
-                                .padding(.top, 8)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 28) {
+                            // Anchor so we can snap back to the top of the
+                            // grid whenever `page` changes. Without this,
+                            // SwiftUI preserves scroll position and the
+                            // next page opens scrolled past its first row.
+                            Color.clear
+                                .frame(height: 0)
+                                .id("library-top")
+                            MasonryGrid(
+                                entries: visibleEntries,
+                                columnCount: cols,
+                                spacing: 28,
+                                onOpen: onOpen,
+                                onRegenerate: { entry in onRequestRegenerate?(entry) },
+                                onDelete: { entry in onRequestDelete?(entry) },
+                                onTogglePin: { entry in togglePin(entry) }
+                            )
+                            if totalPages > 1 {
+                                PaginationBar(page: page, total: totalPages) { page = $0 }
+                                    .padding(.top, 8)
+                            }
+                        }
+                        .padding(.horizontal, 44)
+                        .padding(.top, 36)
+                        .padding(.bottom, 28)
+                    }
+                    .background(DS.paper)
+                    .onChange(of: page) { _, _ in
+                        // Defer one runloop tick: clicking a page button
+                        // inside the scroll view triggers SwiftUI's own
+                        // focus/layout pass, which fights an immediate
+                        // scrollTo and leaves us pinned near the bar.
+                        // Keyboard arrows don't hit this because they
+                        // never give a button focus.
+                        DispatchQueue.main.async {
+                            withAnimation(.easeOut(duration: 0.18)) {
+                                proxy.scrollTo("library-top", anchor: .top)
+                            }
                         }
                     }
-                    .padding(.horizontal, 44)
-                    .padding(.top, 36)
-                    .padding(.bottom, 28)
                 }
-                .background(DS.paper)
             }
         }
     }

@@ -57,6 +57,7 @@ struct EntryDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(DS.paper)
+        .background(escapeShortcut)
         .onAppear {
             updateWindowTitle()
             loadKnownTags()
@@ -743,6 +744,37 @@ struct EntryDetailView: View {
                 // Silent — autocomplete is best-effort.
             }
         }
+    }
+
+    // Hidden button that maps Esc to the back action. Using
+    // `.keyboardShortcut(.cancelAction)` (the same role Cancel buttons
+    // use) is what keeps this sandbox-safe and stops AppKit from
+    // beeping at an unhandled keystroke. Sheets and confirmation
+    // dialogs install their own cancel buttons, so when one is open it
+    // wins and Esc dismisses the sheet first — exactly what we want.
+    private var escapeShortcut: some View {
+        Button("Back to library") { handleEscape() }
+            .keyboardShortcut(.cancelAction)
+            .opacity(0)
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+    }
+
+    // Esc: cancel the innermost edit if one is open, otherwise return
+    // to the library.
+    private func handleEscape() {
+        if isEditingPrompt {
+            isEditingPrompt = false
+            promptDraft = ""
+            promptError = nil
+            return
+        }
+        if isAddingTag {
+            tagDraft = ""
+            isAddingTag = false
+            return
+        }
+        onBack()
     }
 
     // MARK: - Side effects
