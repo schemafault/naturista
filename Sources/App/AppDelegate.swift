@@ -15,6 +15,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.shared = self
 
+        // Show Hidden is a privacy-leaning, session-only toggle: every
+        // launch starts hidden entries hidden, regardless of last
+        // session's choice. Reset before any view reads `@AppStorage`.
+        HiddenSettings.resetForLaunch()
+
         // Resolves Application Support, ensures every subdirectory,
         // runs the legacy ~/.cache → AppSupport model migration and
         // the pre-sandbox-flip container clone in the required order,
@@ -153,6 +158,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         editMenuItem.submenu = editMenu
         mainMenu.addItem(editMenuItem)
 
+        let viewMenuItem = NSMenuItem()
+        let viewMenu = NSMenu(title: "View")
+        let showHidden = NSMenuItem(
+            title: "Show Hidden Items",
+            action: #selector(toggleShowHidden(_:)),
+            keyEquivalent: "."
+        )
+        showHidden.keyEquivalentModifierMask = [.command, .shift]
+        showHidden.target = self
+        viewMenu.addItem(showHidden)
+        viewMenuItem.submenu = viewMenu
+        mainMenu.addItem(viewMenuItem)
+
         NSApp.mainMenu = mainMenu
+    }
+
+    // Flips the session-only Show-Hidden toggle. SwiftUI sidebar reads
+    // the same UserDefaults key via @AppStorage; the menu item's check
+    // state is reapplied in validateMenuItem when AppKit re-validates
+    // the menu before display.
+    @objc private func toggleShowHidden(_ sender: NSMenuItem) {
+        let cur = UserDefaults.standard.bool(forKey: HiddenSettings.showHiddenKey)
+        UserDefaults.standard.set(!cur, forKey: HiddenSettings.showHiddenKey)
+    }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(toggleShowHidden(_:)) {
+            menuItem.state = UserDefaults.standard.bool(forKey: HiddenSettings.showHiddenKey) ? .on : .off
+        }
+        return true
     }
 }

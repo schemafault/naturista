@@ -15,6 +15,7 @@ struct Entry: Codable, FetchableRecord, PersistableRecord, Identifiable {
     var thumbnailFilename: String? = nil
     var notes: String = ""
     var pinned: Bool = false
+    var hidden: Bool = false
     var tagsJson: String = "[]"
     // Per-entry override that bypasses the kingdom-template render path
     // in FluxActor. Edited via the detail view's "Illustration prompt"
@@ -33,7 +34,7 @@ struct Entry: Codable, FetchableRecord, PersistableRecord, Identifiable {
     enum Columns: String, ColumnExpression {
         case id, createdAt, capturedAt, originalImageFilename, workingImageFilename
         case identificationJson, modelConfidence, userStatus
-        case illustrationFilename, plateFilename, thumbnailFilename, notes, pinned, tagsJson
+        case illustrationFilename, plateFilename, thumbnailFilename, notes, pinned, hidden, tagsJson
         case customFluxPrompt
         case editedCommonName, editedScientificName, editedFamily
     }

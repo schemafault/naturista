@@ -10,7 +10,7 @@ struct LibraryView: View {
     var onRequestRegenerate: ((Entry) -> Void)? = nil
     var onRequestDelete: ((Entry) -> Void)? = nil
 
-    enum CollectionFilter: Equatable { case all, recent, pinned }
+    enum CollectionFilter: Equatable { case all, recent, pinned, hidden }
 
     @State private var entries: [Entry] = []
     @State private var isLoading = false
@@ -30,18 +30,33 @@ struct LibraryView: View {
 
     @AppStorage("sidebar.familyExpanded") private var familyExpanded: Bool = false
     @AppStorage("sidebar.tagsExpanded") private var tagsExpanded: Bool = true
+    // Session-only Show Hidden toggle. AppDelegate resets the underlying
+    // UserDefaults key on each launch (HiddenSettings.resetForLaunch).
+    @AppStorage(HiddenSettings.showHiddenKey) private var showHidden: Bool = false
 
     @State private var pendingRenameTag: String? = nil
     @State private var renameDraft: String = ""
     @State private var pendingTagDelete: String? = nil
 
+    @State private var showHiddenToast = false
+    @State private var hiddenToastTask: Task<Void, Never>? = nil
+
     private var filtered: [Entry] {
         entries.filter { e in
+            // Hidden gating. The Hidden filter shows ONLY hidden
+            // entries; every other filter excludes them when the
+            // Show-Hidden toggle is off, and includes them when on.
+            switch activeFilter {
+            case .hidden:
+                if !e.hidden { return false }
+            default:
+                if !showHidden && e.hidden { return false }
+            }
             let family = e.effectiveFamily ?? ""
             if let fam = activeFamily, family != fam { return false }
             if let tag = activeTag, !e.tags.contains(tag) { return false }
             switch activeFilter {
-            case .all: break
+            case .all, .hidden: break
             case .recent: if !recentIds.contains(e.id) { return false }
             case .pinned: if !e.pinned { return false }
             }
@@ -65,6 +80,13 @@ struct LibraryView: View {
         let end = min(filtered.count, start + pageSize)
         guard start < end else { return [] }
         return Array(filtered[start..<end])
+    }
+
+    // The pool sidebar counts and "Recent" are computed against. When
+    // Show Hidden is off, hidden entries are removed before counting so
+    // every visible total stays consistent with what the masonry shows.
+    private func sidebarBase(from entries: [Entry]) -> [Entry] {
+        showHidden ? entries : entries.filter { !$0.hidden }
     }
 
     private static func computeRecentIds(_ entries: [Entry]) -> Set<String> {
@@ -110,12 +132,35 @@ struct LibraryView: View {
         }
         .background(DS.paper)
         .background(pageNavigationShortcuts)
+        .overlay(alignment: .bottom) {
+            if showHiddenToast {
+                Text("Hidden. View → Show Hidden Items to find it.")
+                    .font(DS.sans(12))
+                    .foregroundColor(DS.ink)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(DS.paper)
+                    .overlay(Rectangle().stroke(DS.hairline, lineWidth: 1))
+                    .padding(.bottom, 24)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+        }
         .onAppear { reload() }
         .onChange(of: reloadToken) { _, _ in reload() }
         .onChange(of: query) { _, _ in page = 0 }
         .onChange(of: activeFamily) { _, _ in page = 0 }
         .onChange(of: activeTag) { _, _ in page = 0 }
         .onChange(of: activeFilter) { _, _ in page = 0 }
+        .onChange(of: showHidden) { _, newValue in
+            // Toggle off while looking at the Hidden bin: drop to All
+            // since the row itself disappears. Otherwise stay on the
+            // current filter and let the masonry reflow.
+            if !newValue, activeFilter == .hidden {
+                activeFilter = .all
+            }
+            deriveSidebarState()
+            page = 0
+        }
     }
 
     // Hidden buttons whose only purpose is to register left/right arrow
@@ -158,9 +203,10 @@ struct LibraryView: View {
                         Eyebrow(text: "Collection")
                             .padding(.horizontal, 14)
                         VStack(alignment: .leading, spacing: 1) {
+                            let base = sidebarBase(from: entries)
                             sidebarRow(
                                 title: "All entries",
-                                count: entries.count,
+                                count: base.count,
                                 isActive: activeFilter == .all && activeFamily == nil && activeTag == nil
                             ) {
                                 activeFilter = .all
@@ -169,14 +215,14 @@ struct LibraryView: View {
                             }
                             sidebarRow(
                                 title: "Recent",
-                                count: min(12, entries.count),
+                                count: min(12, base.count),
                                 isActive: activeFilter == .recent
                             ) {
                                 activeFilter = (activeFilter == .recent) ? .all : .recent
                                 activeFamily = nil
                                 activeTag = nil
                             }
-                            let pinnedCount = entries.filter { $0.pinned }.count
+                            let pinnedCount = base.filter { $0.pinned }.count
                             sidebarRow(
                                 title: "Pinned",
                                 count: pinnedCount,
@@ -187,6 +233,20 @@ struct LibraryView: View {
                                 activeFilter = (activeFilter == .pinned) ? .all : .pinned
                                 activeFamily = nil
                                 activeTag = nil
+                            }
+                            if showHidden {
+                                let hiddenCount = entries.filter { $0.hidden }.count
+                                sidebarRow(
+                                    title: "Hidden",
+                                    count: hiddenCount,
+                                    isActive: activeFilter == .hidden,
+                                    dim: hiddenCount == 0 && activeFilter != .hidden
+                                ) {
+                                    guard hiddenCount > 0 else { return }
+                                    activeFilter = (activeFilter == .hidden) ? .all : .hidden
+                                    activeFamily = nil
+                                    activeTag = nil
+                                }
                             }
                         }
                     }
@@ -369,6 +429,7 @@ struct LibraryView: View {
         switch activeFilter {
         case .recent: return "Collection · Recent"
         case .pinned: return "Collection · Pinned"
+        case .hidden: return "Collection · Hidden"
         case .all:    return "Library"
         }
     }
@@ -379,6 +440,7 @@ struct LibraryView: View {
         switch activeFilter {
         case .recent: return "Recent"
         case .pinned: return "Pinned"
+        case .hidden: return "Hidden"
         case .all:    return "My journal"
         }
     }
@@ -459,7 +521,8 @@ struct LibraryView: View {
                                 onOpen: onOpen,
                                 onRegenerate: { entry in onRequestRegenerate?(entry) },
                                 onDelete: { entry in onRequestDelete?(entry) },
-                                onTogglePin: { entry in togglePin(entry) }
+                                onTogglePin: { entry in togglePin(entry) },
+                                onToggleHidden: { entry in toggleHidden(entry) }
                             )
                             if totalPages > 1 {
                                 PaginationBar(page: page, total: totalPages) { page = $0 }
@@ -543,6 +606,7 @@ struct LibraryView: View {
         switch activeFilter {
         case .pinned: return "No pinned entries"
         case .recent: return "No recent entries"
+        case .hidden: return "No hidden entries"
         case .all:    return "No entries"
         }
     }
@@ -563,9 +627,7 @@ struct LibraryView: View {
                 let fetched = try await DatabaseService.shared.fetchAllEntries()
                 await MainActor.run {
                     entries = fetched
-                    recentIds = Self.computeRecentIds(fetched)
-                    familyCounts = Self.computeFamilyCounts(fetched)
-                    tagCounts = Self.computeTagCounts(fetched)
+                    deriveSidebarState()
                     if let fam = activeFamily, !fetched.contains(where: { $0.effectiveFamily == fam }) {
                         activeFamily = nil
                     }
@@ -573,6 +635,9 @@ struct LibraryView: View {
                         activeTag = nil
                     }
                     if activeFilter == .pinned, !fetched.contains(where: { $0.pinned }) {
+                        activeFilter = .all
+                    }
+                    if activeFilter == .hidden, !fetched.contains(where: { $0.hidden }) {
                         activeFilter = .all
                     }
                     if page >= totalPages { page = 0 }
@@ -583,6 +648,17 @@ struct LibraryView: View {
                 await MainActor.run { isLoading = false }
             }
         }
+    }
+
+    // Re-derives Recent / Family / Tag pools from the current entries
+    // list, gated by the Show-Hidden toggle. Called from reload() and
+    // whenever showHidden flips so sidebar counts and the Recent set
+    // stay in sync with what the masonry will actually render.
+    private func deriveSidebarState() {
+        let base = sidebarBase(from: entries)
+        recentIds = Self.computeRecentIds(base)
+        familyCounts = Self.computeFamilyCounts(base)
+        tagCounts = Self.computeTagCounts(base)
     }
 
     private func performTagRename(from source: String, to target: String) {
@@ -630,6 +706,40 @@ struct LibraryView: View {
         }
     }
 
+    private func toggleHidden(_ entry: Entry) {
+        let target = !entry.hidden
+        if target {
+            triggerHiddenToastIfNeeded()
+        }
+        Task {
+            do {
+                let updated = try await DatabaseService.shared.setHidden(id: entry.id, hidden: target)
+                await MainActor.run {
+                    if let updated, let idx = entries.firstIndex(where: { $0.id == updated.id }) {
+                        entries[idx] = updated
+                        deriveSidebarState()
+                    }
+                }
+            } catch {
+                // Surface silently — hide is best-effort.
+            }
+        }
+    }
+
+    private func triggerHiddenToastIfNeeded() {
+        guard !HiddenToastSeen.shared.firstHideShownThisSession else { return }
+        HiddenToastSeen.shared.firstHideShownThisSession = true
+        hiddenToastTask?.cancel()
+        withAnimation(.easeOut(duration: 0.18)) { showHiddenToast = true }
+        hiddenToastTask = Task {
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            if Task.isCancelled { return }
+            await MainActor.run {
+                withAnimation(.easeIn(duration: 0.3)) { showHiddenToast = false }
+            }
+        }
+    }
+
     private func updateWindowTitle() {
         let title = "Naturista: My Journal"
         NSApp.windows.first?.title = title
@@ -673,6 +783,7 @@ private struct MasonryGrid: View {
     var onRegenerate: ((Entry) -> Void)? = nil
     var onDelete: ((Entry) -> Void)? = nil
     var onTogglePin: ((Entry) -> Void)? = nil
+    var onToggleHidden: ((Entry) -> Void)? = nil
 
     var body: some View {
         let buckets = distribute(entries: entries, into: columnCount)
@@ -686,7 +797,8 @@ private struct MasonryGrid: View {
                                 entry: entry,
                                 onRegenerate: { onRegenerate?($0) },
                                 onDelete: { onDelete?($0) },
-                                onTogglePin: { onTogglePin?($0) }
+                                onTogglePin: { onTogglePin?($0) },
+                                onToggleHidden: { onToggleHidden?($0) }
                             ))
                     }
                 }
@@ -859,6 +971,7 @@ private struct EntryContextMenuModifier: ViewModifier {
     var onRegenerate: (Entry) -> Void
     var onDelete: (Entry) -> Void
     var onTogglePin: (Entry) -> Void
+    var onToggleHidden: (Entry) -> Void
 
     @State private var presented = false
     @State private var anchor: UnitPoint = .center
@@ -893,7 +1006,8 @@ private struct EntryContextMenuModifier: ViewModifier {
                     entry: entry,
                     onRegenerate: { presented = false; onRegenerate(entry) },
                     onDelete: { presented = false; onDelete(entry) },
-                    onTogglePin: { presented = false; onTogglePin(entry) }
+                    onTogglePin: { presented = false; onTogglePin(entry) },
+                    onToggleHidden: { presented = false; onToggleHidden(entry) }
                 )
             }
     }
@@ -975,6 +1089,7 @@ private struct EntryContextMenuView: View {
     var onRegenerate: () -> Void
     var onDelete: () -> Void
     var onTogglePin: () -> Void
+    var onToggleHidden: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -986,6 +1101,10 @@ private struct EntryContextMenuView: View {
             menuRow(
                 title: entry.pinned ? "Unpin from collection" : "Pin to collection",
                 action: onTogglePin
+            )
+            menuRow(
+                title: entry.hidden ? "Unhide entry" : "Hide entry",
+                action: onToggleHidden
             )
             menuRow(
                 title: "Regenerate illustration",

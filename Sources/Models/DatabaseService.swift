@@ -62,6 +62,11 @@ actor DatabaseService {
                 t.add(column: "editedFamily", .text)
             }
         }
+        migrator.registerMigration("v7_hidden") { db in
+            try db.alter(table: "entries") { t in
+                t.add(column: "hidden", .boolean).notNull().defaults(to: false)
+            }
+        }
         return migrator
     }
 
@@ -126,6 +131,17 @@ actor DatabaseService {
         return try dbQueue.write { db in
             guard var entry = try Entry.fetchOne(db, key: id) else { return nil }
             entry.pinned = pinned
+            try entry.update(db)
+            return entry
+        }
+    }
+
+    @discardableResult
+    func setHidden(id: String, hidden: Bool) throws -> Entry? {
+        guard let dbQueue else { throw DatabaseError.notInitialized }
+        return try dbQueue.write { db in
+            guard var entry = try Entry.fetchOne(db, key: id) else { return nil }
+            entry.hidden = hidden
             try entry.update(db)
             return entry
         }

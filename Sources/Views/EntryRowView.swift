@@ -32,7 +32,19 @@ struct EntryRowView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
+
+                if entry.hidden {
+                    MonoLabel(text: "HIDDEN", color: DS.muted)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(DS.paper.opacity(0.85))
+                        .overlay(Rectangle().stroke(DS.hairlineSoft, lineWidth: 1))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                }
             }
+            .opacity(entry.hidden ? 0.6 : 1)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.effectiveCommonName ?? "Unidentified")

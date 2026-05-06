@@ -35,6 +35,8 @@ struct EntryDetailView: View {
     @State private var editingField: EditableField? = nil
     @State private var editDraft: String = ""
     @FocusState private var editFocused: Bool
+    @State private var showHiddenToast = false
+    @State private var hiddenToastTask: Task<Void, Never>? = nil
 
     enum PlateTab { case plate, photo }
     enum EditableField { case commonName, scientificName, family }
@@ -65,6 +67,20 @@ struct EntryDetailView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(DS.paper)
         .background(escapeShortcut)
+        .background(hideShortcut)
+        .overlay(alignment: .bottom) {
+            if showHiddenToast {
+                Text("Hidden. View → Show Hidden Items to find it.")
+                    .font(DS.sans(12))
+                    .foregroundColor(DS.ink)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(DS.paper)
+                    .overlay(Rectangle().stroke(DS.hairline, lineWidth: 1))
+                    .padding(.bottom, 24)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+        }
         .onAppear {
             updateWindowTitle()
             loadKnownTags()
@@ -115,7 +131,15 @@ struct EntryDetailView: View {
 
             Spacer()
 
-            MonoLabel(text: "PLATE \(plateNumber)", color: DS.muted)
+            HStack(spacing: 10) {
+                MonoLabel(text: "PLATE \(plateNumber)", color: DS.muted)
+                if entry.hidden {
+                    Rectangle()
+                        .fill(DS.hairline)
+                        .frame(width: 1, height: 9)
+                    MonoLabel(text: "HIDDEN", color: DS.muted)
+                }
+            }
 
             Spacer()
 
@@ -126,6 +150,14 @@ struct EntryDetailView: View {
                             .font(.system(size: 11, weight: .regular))
                             .rotationEffect(.degrees(45))
                         Text(entry.pinned ? "Pinned" : "Pin")
+                    }
+                }
+                .buttonStyle(QuietButtonStyle())
+                Button(action: toggleHidden) {
+                    HStack(spacing: 6) {
+                        Image(systemName: entry.hidden ? "eye.slash.fill" : "eye.slash")
+                            .font(.system(size: 11, weight: .regular))
+                        Text(entry.hidden ? "Unhide" : "Hide")
                     }
                 }
                 .buttonStyle(QuietButtonStyle())
@@ -860,6 +892,17 @@ struct EntryDetailView: View {
             .accessibilityHidden(true)
     }
 
+    // ⌃H literal (Control-H) toggles the entry's hidden state. ⌘H is
+    // already the system "Hide app" shortcut; ⌃H is unambiguous on Mac
+    // and matches the user's spec.
+    private var hideShortcut: some View {
+        Button("Toggle hidden") { toggleHidden() }
+            .keyboardShortcut("h", modifiers: .control)
+            .opacity(0)
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+    }
+
     // Esc: cancel the innermost edit if one is open, otherwise return
     // to the library.
     private func handleEscape() {
@@ -918,6 +961,51 @@ struct EntryDetailView: View {
                     entry.pinned = !target
                     pipelineError = error.localizedDescription
                 }
+            }
+        }
+    }
+
+    // ⌃H from anywhere on the detail view, the explicit Hide/Unhide
+    // top-bar button, and the right-click menu all funnel here. We
+    // stay on the detail view (per design): the "HIDDEN" badge in the
+    // top bar is the user's confirmation that the flag flipped, and
+    // the toast on first-hide-per-session points them at the View
+    // menu so they know how to unhide later.
+    private func toggleHidden() {
+        let target = !entry.hidden
+        let id = entry.id
+        entry.hidden = target
+        if target {
+            triggerHiddenToastIfNeeded()
+        }
+        Task {
+            do {
+                let updated = try await DatabaseService.shared.setHidden(id: id, hidden: target)
+                if let updated {
+                    await MainActor.run {
+                        entry = updated
+                        onUpdated?(updated)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    entry.hidden = !target
+                    pipelineError = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func triggerHiddenToastIfNeeded() {
+        guard !HiddenToastSeen.shared.firstHideShownThisSession else { return }
+        HiddenToastSeen.shared.firstHideShownThisSession = true
+        hiddenToastTask?.cancel()
+        withAnimation(.easeOut(duration: 0.18)) { showHiddenToast = true }
+        hiddenToastTask = Task {
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            if Task.isCancelled { return }
+            await MainActor.run {
+                withAnimation(.easeIn(duration: 0.3)) { showHiddenToast = false }
             }
         }
     }
